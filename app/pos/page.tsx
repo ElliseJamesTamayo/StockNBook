@@ -62,6 +62,7 @@ type Order = {
   customer: string;
   items: OrderItem[];
   total: number;
+  // Stored as YYYY-MM-DD for reliable filtering
   date: string;
 };
 
@@ -80,6 +81,49 @@ const peso = (n: number) =>
       currency: "PHP",
       minimumFractionDigits: 2,
     }).format(n);
+
+/** local date -> YYYY-MM-DD (no timezone shifting) */
+const toISODateKey = (d: Date) => {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+/** YYYY-MM-DD -> local Date */
+const fromISODateKey = (s: string) => {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+};
+
+const addDays = (d: Date, days: number) => {
+  const next = new Date(d);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const formatHeaderDate = (d: Date) => {
+  const dateText = d.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+  const dayText = d.toLocaleDateString("en-US", { weekday: "long" });
+  return `${dateText} ${dayText}`;
+};
+
+/**
+ * Supports older localStorage orders that used "May 12, 2026".
+ * Converts to YYYY-MM-DD for filtering.
+ */
+const orderDateKey = (o: Order) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(o.date)) return o.date;
+
+  const parsed = new Date(o.date);
+  if (!Number.isNaN(parsed.getTime())) return toISODateKey(parsed);
+
+  return toISODateKey(new Date());
+};
 
 const mapProduct = (p: ProductApiRaw): Product => ({
   id: Number(p.id),
@@ -140,6 +184,9 @@ export default function POSPage() {
   const [manualCategories, setManualCategories] = useState<Category[]>(() => readCategories());
   const [storeName] = useState<string>(() => readStoreName());
 
+  // Date selector for transactions list + stats
+  const [selectedDateKey, setSelectedDateKey] = useState<string>(() => toISODateKey(new Date()));
+
   const [showOrderDialog, setShowOrderDialog] = useState(false);
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
 
@@ -198,7 +245,7 @@ export default function POSPage() {
         const ordersData = (await ordersRes.json()) as PosOrdersApiResponse;
 
         if (ordersRes.ok && Array.isArray(ordersData.orders)) {
-          const mapped = ordersData.orders.map((o) => {
+          const mapped: Order[] = ordersData.orders.map((o) => {
             const safeDate =
                 o.orderDate && o.orderDate !== "0000-00-00"
                     ? new Date(o.orderDate)
@@ -216,11 +263,8 @@ export default function POSPage() {
                   })
                   : [],
               total: Number(o.total || 0),
-              date: safeDate.toLocaleDateString("en-US", {
-                month: "long",
-                day: "numeric",
-                year: "numeric",
-              }),
+              // store as YYYY-MM-DD
+              date: toISODateKey(safeDate),
             };
           });
 
@@ -264,10 +308,10 @@ export default function POSPage() {
     setShowOrderDialog(true);
   };
 
-  const handleQty = (id: number, change: number) => {
+  const handleQty = (id: number, changeQty: number) => {
     setCart((prev) => {
       const current = prev[id] || 0;
-      const next = Math.max(0, current + change);
+      const next = Math.max(0, current + changeQty);
       return { ...prev, [id]: next };
     });
   };
@@ -295,13 +339,9 @@ export default function POSPage() {
   const effectiveTotal = total;
 
   const categories = useMemo(() => {
-    const fromManual = manualCategories
-        .map((c) => c.categoryName?.trim() || "")
-        .filter(Boolean);
+    const fromManual = manualCategories.map((c) => c.categoryName?.trim() || "").filter(Boolean);
 
-    const fromProducts = products
-        .map((p) => (p.category || "").trim())
-        .filter(Boolean);
+    const fromProducts = products.map((p) => (p.category || "").trim()).filter(Boolean);
 
     const unique = Array.from(new Set([...fromManual, ...fromProducts])).sort((a, b) =>
         a.localeCompare(b)
@@ -380,6 +420,35 @@ export default function POSPage() {
     return Math.max(0, paymentNumber - effectiveTotal);
   }, [paymentNumber, effectiveTotal]);
 
+  const selectedDate = useMemo(() => fromISODateKey(selectedDateKey), [selectedDateKey]);
+
+  const ordersForSelectedDate = useMemo(() => {
+    return orders.filter((o) => orderDateKey(o) === selectedDateKey);
+  }, [orders, selectedDateKey]);
+
+  const ordersForSelectedDateForSales = useMemo(() => {
+    return ordersForSelectedDate.filter((o) => Number(o.total || 0) > 0);
+  }, [ordersForSelectedDate]);
+
+  const totalSales = useMemo(() => {
+    return ordersForSelectedDateForSales.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  }, [ordersForSelectedDateForSales]);
+
+  const selectedProfit = useMemo(() => {
+    return ordersForSelectedDateForSales.reduce((sum, order) => {
+      const orderProfit = order.items.reduce((itemSum, item) => {
+        const product = products.find((p) => p.name === item.name);
+        if (!product) return itemSum;
+        const unitProfit = Number(product.salesPrice || 0) - Number(product.originalPrice || 0);
+        return itemSum + unitProfit * Number(item.quantity || 0);
+      }, 0);
+
+      return sum + orderProfit;
+    }, 0);
+  }, [ordersForSelectedDateForSales, products]);
+
+  const customerNumberPreview = ordersForSelectedDate.length + 1;
+
   const handlePlaceOrder = async () => {
     if (!validateStockOrAlert()) return;
 
@@ -400,23 +469,14 @@ export default function POSPage() {
       quantity: i.qty,
     }));
 
-    const todayKey = new Date().toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
-    const todaysCount = existingOrders.filter((o) => o.date === todayKey).length;
+    // For customer numbering: count orders for TODAY (stable key)
+    const todayKey = toISODateKey(new Date());
+    const todaysCount = existingOrders.filter((o) => orderDateKey(o) === todayKey).length;
     const customerName = `Customer ${todaysCount + 1}`;
 
     const baseId = `#${Date.now().toString().slice(-4)}`;
 
-    const displayDate = new Date().toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
-
-    const dbDate = new Date().toISOString().slice(0, 10);
+    const dbDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const displayOrderId = baseId;
 
     const newOrder: Order = {
@@ -424,7 +484,7 @@ export default function POSPage() {
       customer: customerName,
       items,
       total: effectiveTotal,
-      date: displayDate,
+      date: dbDate, // store as YYYY-MM-DD
     };
 
     const token = localStorage.getItem("token");
@@ -513,6 +573,9 @@ export default function POSPage() {
       localStorage.setItem("stocknbook_orders", JSON.stringify(updatedOrders));
       setOrders(updatedOrders);
 
+      // Optional: after placing order, jump the transactions view to TODAY
+      setSelectedDateKey(toISODateKey(new Date()));
+
       setShowReceiptDialog(false);
       setShowOrderDialog(false);
       resetOrderDraft();
@@ -527,30 +590,6 @@ export default function POSPage() {
     setShowOrderDialog(true);
   };
 
-  const todayKey = new Date().toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-
-  const todayOrders = orders.filter((o) => o.date === todayKey);
-  const todayOrdersForSales = todayOrders.filter((o) => Number(o.total || 0) > 0);
-
-  const totalSales = todayOrdersForSales.reduce((sum, o) => sum + Number(o.total || 0), 0);
-
-  const todayProfit = todayOrdersForSales.reduce((sum, order) => {
-    const orderProfit = order.items.reduce((itemSum, item) => {
-      const product = products.find((p) => p.name === item.name);
-      if (!product) return itemSum;
-      const unitProfit = Number(product.salesPrice || 0) - Number(product.originalPrice || 0);
-      return itemSum + unitProfit * Number(item.quantity || 0);
-    }, 0);
-
-    return sum + orderProfit;
-  }, 0);
-
-  const customerNumberPreview = todayOrders.length + 1;
-
   return (
       <div className="flex min-h-screen bg-[#f5f6f8]">
         <aside className="flex min-h-screen w-52 flex-col justify-between bg-linear-to-b from-[#5f6ee7] to-[#d786e8] text-white">
@@ -562,7 +601,9 @@ export default function POSPage() {
 
               <div className="mt-2 rounded-xl bg-white/10 px-3 py-2 backdrop-blur-sm">
                 <p className="text-xs font-semibold text-white">{storeName}</p>
-                <p className="mt-1 text-[9px] uppercase tracking-[0.15em] text-white/60">Store Owner</p>
+                <p className="mt-1 text-[9px] uppercase tracking-[0.15em] text-white/60">
+                  Store Owner
+                </p>
               </div>
             </div>
 
@@ -570,33 +611,69 @@ export default function POSPage() {
               <p className="mb-1 px-2 text-[9px] uppercase tracking-[0.15em] text-white/50">Core</p>
 
               <div className="space-y-1">
-                <Link href="/admin" className="block rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10">Dashboard</Link>
-                <Link href="/bookings" className="block rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10">Bookings</Link>
-                <div className="rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10">Calendar</div>
+                <Link
+                    href="/admin"
+                    className="block rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10"
+                >
+                  Dashboard
+                </Link>
+                <Link
+                    href="/bookings"
+                    className="block rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10"
+                >
+                  Bookings
+                </Link>
+                <div className="rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10">
+                  Calendar
+                </div>
               </div>
 
-              <p className="mb-1 mt-3 px-2 text-[9px] uppercase tracking-[0.15em] text-white/50">Business</p>
+              <p className="mb-1 mt-3 px-2 text-[9px] uppercase tracking-[0.15em] text-white/50">
+                Business
+              </p>
 
               <div className="space-y-1">
-                <Link href="/inventory" className="block rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10">Inventory</Link>
-                <Link href="/pos" className="block rounded-lg bg-white/20 px-3 py-2 text-xs font-medium">Sales / POS</Link>
+                <Link
+                    href="/inventory"
+                    className="block rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10"
+                >
+                  Inventory
+                </Link>
+                <Link href="/pos" className="block rounded-lg bg-white/20 px-3 py-2 text-xs font-medium">
+                  Sales / POS
+                </Link>
               </div>
 
-              <p className="mb-1 mt-3 px-2 text-[9px] uppercase tracking-[0.15em] text-white/50">Analytics</p>
+              <p className="mb-1 mt-3 px-2 text-[9px] uppercase tracking-[0.15em] text-white/50">
+                Analytics
+              </p>
               <div className="space-y-1">
-                <div className="rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10">Forecasting</div>
+                <div className="rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10">
+                  Forecasting
+                </div>
               </div>
 
-              <p className="mb-1 mt-3 px-2 text-[9px] uppercase tracking-[0.15em] text-white/50">System</p>
+              <p className="mb-1 mt-3 px-2 text-[9px] uppercase tracking-[0.15em] text-white/50">
+                System
+              </p>
               <div className="space-y-1">
-                <Link href="/booking-link" className="block rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10">Booking Link</Link>
-                <div className="rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10">Settings</div>
+                <Link
+                    href="/booking-link"
+                    className="block rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10"
+                >
+                  Booking Link
+                </Link>
+                <div className="rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10">
+                  Settings
+                </div>
               </div>
             </nav>
           </div>
 
           <div className="px-2 pb-3">
-            <Link href="/" className="block rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10">Logout</Link>
+            <Link href="/" className="block rounded-lg px-3 py-2 text-xs text-white/90 hover:bg-white/10">
+              Logout
+            </Link>
           </div>
         </aside>
 
@@ -617,22 +694,57 @@ export default function POSPage() {
 
           <div className="mb-5 grid gap-4 md:grid-cols-3">
             <div className="rounded-2xl bg-white p-5 shadow-sm">
-              <p className="text-sm text-gray-500">Today&apos;s Sales</p>
+              <p className="text-sm text-gray-500">Sales</p>
               <h2 className="mt-2 text-2xl font-bold text-[#1f2a44]">₱{totalSales.toFixed(2)}</h2>
             </div>
             <div className="rounded-2xl bg-white p-5 shadow-sm">
-              <p className="text-sm text-gray-500">Orders Today</p>
-              <h2 className="mt-2 text-2xl font-bold text-[#1f2a44]">{todayOrders.length}</h2>
+              <p className="text-sm text-gray-500">Orders</p>
+              <h2 className="mt-2 text-2xl font-bold text-[#1f2a44]">{ordersForSelectedDate.length}</h2>
             </div>
             <div className="rounded-2xl bg-white p-5 shadow-sm">
-              <p className="text-sm text-gray-500">Today&apos;s Profit</p>
-              <h2 className="mt-2 text-2xl font-bold text-[#1f2a44]">{peso(todayProfit)}</h2>
+              <p className="text-sm text-gray-500">Profit</p>
+              <h2 className="mt-2 text-2xl font-bold text-[#1f2a44]">{peso(selectedProfit)}</h2>
             </div>
           </div>
 
           <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-            <div className="border-b px-5 py-4">
-              <h3 className="text-sm font-semibold text-[#1f2a44]">Recent Orders</h3>
+            {/* Header with date/day + arrows */}
+            <div className="border-b px-5 py-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-[#1f2a44]">Transactions</h3>
+                <p className="mt-1 text-xs text-gray-500">{formatHeaderDate(selectedDate)}</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                    type="button"
+                    onClick={() => setSelectedDateKey(toISODateKey(addDays(selectedDate, -1)))}
+                    className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    aria-label="Previous day"
+                    title="Yesterday"
+                >
+                  ←
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setSelectedDateKey(toISODateKey(new Date()))}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    title="Jump to today"
+                >
+                  Today
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setSelectedDateKey(toISODateKey(addDays(selectedDate, 1)))}
+                    className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    aria-label="Next day"
+                    title="Tomorrow"
+                >
+                  →
+                </button>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -648,14 +760,14 @@ export default function POSPage() {
                 </thead>
 
                 <tbody>
-                {orders.length === 0 ? (
+                {ordersForSelectedDate.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">
-                        No orders yet
+                        No orders for this date
                       </td>
                     </tr>
                 ) : (
-                    orders.map((o) => (
+                    ordersForSelectedDate.map((o) => (
                         <tr key={o.id} className="border-t border-gray-100">
                           <td className="px-5 py-4 text-gray-600">{o.id}</td>
                           <td className="px-5 py-4 text-gray-600">{o.customer}</td>
@@ -672,8 +784,17 @@ export default function POSPage() {
                                 "-"
                             )}
                           </td>
-                          <td className="px-5 py-4 font-medium text-gray-700">₱{o.total.toFixed(2)}</td>
-                          <td className="px-5 py-4 text-gray-600">{o.date}</td>
+                          <td className="px-5 py-4 font-medium text-gray-700">
+                            ₱{o.total.toFixed(2)}
+                          </td>
+                          {/* display as "May 12, 2026" even though stored as YYYY-MM-DD */}
+                          <td className="px-5 py-4 text-gray-600">
+                            {fromISODateKey(orderDateKey(o)).toLocaleDateString("en-US", {
+                              month: "long",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </td>
                         </tr>
                     ))
                 )}
@@ -724,7 +845,11 @@ export default function POSPage() {
                         </div>
 
                         <div className="text-xs text-slate-500">
-                          Showing <span className="font-semibold text-slate-700">{filteredProducts.length}</span> product(s)
+                          Showing{" "}
+                          <span className="font-semibold text-slate-700">
+                        {filteredProducts.length}
+                      </span>{" "}
+                          product(s)
                         </div>
                       </div>
 
@@ -739,11 +864,16 @@ export default function POSPage() {
                                 const isMax = qty >= p.stock && p.stock > 0;
 
                                 return (
-                                    <div key={p.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
+                                    <div
+                                        key={p.id}
+                                        className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3"
+                                    >
                                       <div className="min-w-0">
                                         <p className="truncate font-semibold text-slate-900">{p.name}</p>
                                         <p className="text-xs text-slate-600">
-                                          {(p.category || "Uncategorized") + " • ₱" + Number(p.salesPrice || 0).toFixed(2)}
+                                          {(p.category || "Uncategorized") +
+                                              " • ₱" +
+                                              Number(p.salesPrice || 0).toFixed(2)}
                                         </p>
                                         <p className="text-xs">
                                           {out ? (
@@ -765,7 +895,9 @@ export default function POSPage() {
                                           –
                                         </button>
 
-                                        <span className="min-w-8 text-center font-semibold text-slate-900">{qty}</span>
+                                        <span className="min-w-8 text-center font-semibold text-slate-900">
+                                  {qty}
+                                </span>
 
                                         <button
                                             disabled={out || isMax}
@@ -794,7 +926,9 @@ export default function POSPage() {
                                 <div key={i.id} className="rounded-xl border border-slate-200 bg-white p-3">
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
-                                      <p className="truncate text-sm font-semibold text-slate-900">{i.name}</p>
+                                      <p className="truncate text-sm font-semibold text-slate-900">
+                                        {i.name}
+                                      </p>
                                       <p className="text-xs text-slate-600">
                                         {i.qty} x {peso(i.price)}
                                       </p>

@@ -30,6 +30,21 @@ type Booking = {
     name: string;
 };
 
+type PosOrderApi = {
+    orderId?: string;
+    customerName?: string;
+    item?: string;
+    total?: number;
+    orderDate?: string;
+    createdAt?: string;
+};
+
+type ProductsApiResponse = {
+    success?: boolean;
+    products?: Product[];
+    error?: string;
+};
+
 const STORAGE_KEY = "stocknbook_inventory_products";
 const hour = new Date().getHours();
 
@@ -50,10 +65,7 @@ export default function AdminDashboard() {
     const [storeName, setStoreName] = useState("Store Owner");
 
     useEffect(() => {
-        const loadData  = async () => {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) setProducts(JSON.parse(saved) as Product[]);
-
+        const loadData = async () => {
             const token = localStorage.getItem("token");
 
             if (token) {
@@ -83,14 +95,82 @@ export default function AdminDashboard() {
                     console.warn("Dashboard bookings fetch failed:", error);
                     setBookings([]);
                 }
+
+                try {
+                    const ordersRes = await fetch("/api/pos", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ action: "get_orders" }),
+                    });
+
+                    const ordersText = await ordersRes.text();
+                    console.log("ADMIN DASHBOARD ORDERS RAW:", ordersRes.status, ordersText);
+
+                    const ordersData = JSON.parse(ordersText);
+
+                    if (ordersRes.ok && Array.isArray(ordersData.orders)) {
+                        const mapped = (ordersData.orders as PosOrderApi[]).map((o) => {
+                            const safeDate =
+                                o.orderDate && o.orderDate !== "0000-00-00"
+                                    ? new Date(o.orderDate)
+                                    : o.createdAt
+                                        ? new Date(o.createdAt)
+                                        : new Date();
+
+                            return {
+                                total: Number(o.total || 0),
+                                date: safeDate.toISOString().split("T")[0],
+                                items: o.item
+                                    ? o.item.split(",").map((s: string) => {
+                                        const [name, qty] = s.split(" x");
+                                        return { name: name.trim(), quantity: Number(qty || 0) };
+                                    })
+                                    : [],
+                            };
+                        });
+
+                        setOrders(mapped);
+                    } else {
+                        setOrders([]);
+                    }
+                } catch (error) {
+                    console.warn("Dashboard orders fetch failed:", error);
+                    setOrders([]);
+                }
+
+                try {
+                    const productsRes = await fetch("/api/products", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ action: "get_products" }),
+                    });
+
+                    const productsText = await productsRes.text();
+                    console.log("ADMIN DASHBOARD PRODUCTS RAW:", productsRes.status, productsText);
+
+                    const productsData = JSON.parse(productsText) as ProductsApiResponse;
+
+                    if (productsRes.ok && Array.isArray(productsData.products)) {
+                        setProducts(productsData.products);
+                        localStorage.setItem(STORAGE_KEY, JSON.stringify(productsData.products));
+                    } else {
+                        setProducts([]);
+                    }
+                } catch (error) {
+                    console.warn("Dashboard products fetch failed:", error);
+                    setProducts([]);
+                }
             } else {
                 setBookings([]);
+                setOrders([]);
+                setProducts([]);
             }
-
-            const storedOrders = JSON.parse(
-                localStorage.getItem("stocknbook_orders") || "[]"
-            ) as Order[];
-            setOrders(storedOrders);
 
             const savedStoreName =
                 localStorage.getItem("store_name") ||
@@ -102,13 +182,7 @@ export default function AdminDashboard() {
             }
         };
 
-        loadData();
-
-        window.addEventListener("focus", loadData);
-
-        return () => {
-            window.removeEventListener("focus", loadData);
-        };
+        void loadData();
     }, []);
 
     const totalProducts = products.length;
