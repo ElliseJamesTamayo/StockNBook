@@ -313,7 +313,7 @@ function StatusDrawer({ onClose, storeId }: { onClose: () => void; storeId: numb
                             onChange={(e) => { setRefInput(e.target.value.toUpperCase()); setError(""); setBooking(null); }}
                             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                             placeholder="e.g. YUKA-2026-532001"
-                            className="flex-1 rounded-xl border border-purple-200 bg-white px-4 py-2.5 text-sm font-mono tracking-widest outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                            className="flex-1 rounded-xl border border-purple-200 bg-white px-4 py-2.5 text-sm font-mono tracking-widest text-gray-900 outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
                         />
                         <button
                             onClick={handleSearch}
@@ -333,7 +333,7 @@ function StatusDrawer({ onClose, storeId }: { onClose: () => void; storeId: numb
                                 value={phoneInput}
                                 onChange={(e) => { setPhoneInput(e.target.value); setError(""); setPhoneBookings([]); setSelectedBooking(null); }}
                                 placeholder="Phone number used when booking (09XXXXXXXXX)"
-                                className="flex-1 rounded-xl border border-purple-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                                className="flex-1 rounded-xl border border-purple-200 bg-white text-gray-900 px-4 py-2.5 text-sm outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
                             />
                         </div>
                         <div className="flex items-center gap-3">
@@ -342,7 +342,7 @@ function StatusDrawer({ onClose, storeId }: { onClose: () => void; storeId: numb
                                 type="date"
                                 value={dateInput}
                                 onChange={(e) => { setDateInput(e.target.value); setError(""); setPhoneBookings([]); setSelectedBooking(null); }}
-                                className="flex-1 rounded-xl border border-purple-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                                className="flex-1 rounded-xl border border-purple-200 bg-white text-gray-900 px-4 py-2.5 text-sm outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
                             />
                             <button
                                 onClick={handleSearch}
@@ -977,7 +977,7 @@ export default function BookStorePage() {
                                                 value={customOrder}
                                                 onChange={(e) => { setCustomOrder(e.target.value); clearError("selection"); }}
                                                 placeholder="Describe your custom event setup request..."
-                                                className={`min-h-[140px] w-full resize-none rounded-2xl border p-4 outline-none transition focus:border-purple-400 ${
+                                                className={`min-h-[140px] w-full resize-none rounded-2xl border p-4 text-gray-900 outline-none transition focus:border-purple-400 ${
                                                     fieldErrors.selection ? "border-red-400 bg-red-50" : "border-gray-200"
                                                 }`}
                                             />
@@ -1028,7 +1028,7 @@ export default function BookStorePage() {
                                                 type="date"
                                                 value={date}
                                                 onChange={(e) => { setDate(e.target.value); clearError("date"); }}
-                                                className={`w-full rounded-2xl border py-4 pl-12 pr-4 outline-none transition focus:border-purple-400 ${
+                                                className={`w-full rounded-2xl border py-4 pl-12 pr-4 text-gray-900 outline-none transition focus:border-purple-400 ${
                                                     fieldErrors.date ? "border-red-400 bg-red-50" : "border-gray-200"
                                                 }`}
                                             />
@@ -1045,7 +1045,7 @@ export default function BookStorePage() {
                                             type="time"
                                             value={eventTime}
                                             onChange={(e) => { setEventTime(e.target.value); clearError("eventTime"); }}
-                                            className={`w-full rounded-2xl border p-4 outline-none transition focus:border-purple-400 ${
+                                            className={`w-full rounded-2xl border p-4 text-gray-900 outline-none transition focus:border-purple-400 ${
                                                 fieldErrors.eventTime ? "border-red-400 bg-red-50" : "border-gray-200"
                                             }`}
                                         />
@@ -1081,7 +1081,7 @@ export default function BookStorePage() {
                                         value={theme}
                                         onChange={(e) => { setTheme(e.target.value); clearError("theme"); }}
                                         placeholder="Example: pastel pink, safari, princess, floral, minimalist, blue and gold..."
-                                        className={`min-h-[120px] w-full resize-none rounded-2xl border p-4 outline-none transition focus:border-purple-400 ${
+                                        className={`min-h-[120px] w-full resize-none rounded-2xl border p-4 text-gray-900 outline-none transition focus:border-purple-400 ${
                                             fieldErrors.theme ? "border-red-400 bg-red-50" : "border-gray-200"
                                         }`}
                                     />
@@ -1100,7 +1100,7 @@ export default function BookStorePage() {
                                         value={notes}
                                         onChange={(e) => setNotes(e.target.value)}
                                         placeholder="Additional requests, backdrop text, celebrant name, age, delivery notes..."
-                                        className="min-h-[120px] w-full resize-none rounded-2xl border border-gray-200 p-4 outline-none transition focus:border-purple-400"
+                                        className="min-h-[120px] w-full resize-none rounded-2xl border border-gray-200 p-4 text-gray-900 outline-none transition focus:border-purple-400"
                                     />
                                 </div>
                             </div>
@@ -1212,7 +1212,7 @@ function Input({ label, value, onChange, placeholder, error }: {
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder}
-                className={`w-full rounded-2xl border p-4 outline-none transition focus:border-purple-400 ${
+                className={`w-full rounded-2xl border p-4 text-gray-900 outline-none transition focus:border-purple-400 ${
                     error ? "border-red-400 bg-red-50" : "border-gray-200"
                 }`}
             />
