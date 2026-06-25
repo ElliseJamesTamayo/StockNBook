@@ -46,7 +46,7 @@ export default function OwnerInventory() {
                                 <StoreIcon />
 
                                 <div>
-                                    <h2 className="font-serif text-base font-semibold text-[#1A1220]">
+                                    <h2 className="text-base font-semibold text-[#1A1220]">
                                         Branches
                                     </h2>
                                     <p className="text-xs text-[#9B8AAA]">
@@ -101,7 +101,7 @@ export default function OwnerInventory() {
 
                     <section className="overflow-hidden rounded-[16px] border border-[#E6DDF0] bg-white shadow-sm">
                         <div className="border-b border-[#E6DDF0] bg-[#FFFCF7] px-4 py-4">
-                            <p className="font-serif text-lg font-semibold text-[#1A1220]">
+                            <p className="text-lg font-semibold text-[#1A1220]">
                                 {inv.selectedBranch?.branchName || "Select a Branch"}
                             </p>
 

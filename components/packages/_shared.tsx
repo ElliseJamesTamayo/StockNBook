@@ -280,11 +280,39 @@ export function PackageCard({
     onEdit: () => void;
     onDelete: () => void;
 }) {
-    const shownInclusions = (pkg.inclusions || []).slice(0, 2);
-    const moreCount = Math.max((pkg.inclusions || []).length - 2, 0);
+    const inclusionCount = (pkg.inclusions || []).length;
+
+    // Adds only a compact visual cover. The original card layout stays unchanged.
+    const packageText = `${pkg.name} ${pkg.description || ""}`.toLowerCase();
+
+    const coverImage = packageText.includes("wedding")
+        ? "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&w=700&q=85"
+        : packageText.includes("birthday")
+            ? "https://images.unsplash.com/photo-1530103862676-de8c9debad1d?auto=format&fit=crop&w=700&q=85"
+            : packageText.includes("graduation")
+                ? "https://images.unsplash.com/photo-1523580494863-6f3031224c94?auto=format&fit=crop&w=700&q=85"
+                : packageText.includes("christening") || packageText.includes("baby")
+                    ? "https://images.unsplash.com/photo-1519710164239-da123dc03ef4?auto=format&fit=crop&w=700&q=85"
+                    : packageText.includes("corporate")
+                        ? "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=700&q=85"
+                        : "https://images.unsplash.com/photo-1507504031003-b417219a0fde?auto=format&fit=crop&w=700&q=85";
 
     return (
         <div className="overflow-hidden rounded-[10px] border border-[#EBE4F0] bg-white">
+            {/* Added picture only */}
+            <div className="h-[84px] overflow-hidden bg-[#F5EEF6]">
+                <img
+                    src={coverImage}
+                    alt={`${pkg.name} package cover`}
+                    loading="lazy"
+                    onError={(event) => {
+                        event.currentTarget.style.display = "none";
+                    }}
+                    className="h-full w-full object-cover"
+                />
+            </div>
+
+            {/* Original compact header */}
             <div
                 className={`px-3 py-2.5 ${
                     featured ? "bg-[#C9951A] text-white" : "bg-[#2D1B4E] text-white"
@@ -309,42 +337,56 @@ export function PackageCard({
                 </div>
             </div>
 
+            {/* Original compact content with visual summary */}
             <div className="px-3 py-2.5">
                 <p className="line-clamp-2 min-h-[28px] text-[9.5px] leading-[14px] text-[#7A6E88]">
                     {pkg.description || "No description"}
                 </p>
 
-                <div className="mt-2 space-y-0.5">
-                    {shownInclusions.length === 0 ? (
-                        <p className="text-[9.5px] text-[#7A6E88]">
-                            No inclusions listed.
-                        </p>
-                    ) : (
-                        shownInclusions.map((item) => (
-                            <p
-                                key={item.productId}
-                                className="truncate text-[9.5px] leading-[14px] text-[#7A6E88]"
-                            >
-                                {item.productName} × {item.quantity}
-                            </p>
-                        ))
-                    )}
+                <div className="mt-3 flex items-center gap-4 border-t border-[#F5EEF6] pt-2.5">
+                    <div className="flex items-center gap-1.5 text-[9.5px] text-[#7A6E88]">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                        >
+                            <rect x="4" y="7" width="16" height="13" rx="2" />
+                            <path d="M4 11h16" />
+                            <path d="M9 4v5" />
+                            <path d="M15 4v5" />
+                        </svg>
 
-                    {moreCount > 0 && (
-                        <p className="text-[9.5px] font-semibold text-[#2D1B4E]">
-                            +{moreCount} more
-                        </p>
-                    )}
+                        <span>
+                            {inclusionCount}{" "}
+                            {inclusionCount === 1 ? "Item" : "Items"}
+                        </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-[9.5px] text-[#7A6E88]">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                        >
+                            <circle cx="12" cy="12" r="8.5" />
+                            <path d="M12 7.5v4.8l3.1 1.9" />
+                        </svg>
+
+                        <span>{pkg.duration || "N/A"}</span>
+                    </div>
                 </div>
 
-                <div className="mt-2.5 flex items-center justify-between border-t border-[#F5EEF6] pt-2">
-                    <p className="text-[9px] text-[#7A6E88]">
-                        {pkg.duration || "N/A"}
-                    </p>
-
+                <div className="mt-2.5 flex items-center justify-end border-t border-[#F5EEF6] pt-2">
                     {canManage ? (
                         <div className="flex gap-2">
                             <button
+                                type="button"
                                 onClick={onEdit}
                                 className="text-[9.5px] font-semibold text-[#2D1B4E] hover:underline"
                             >
@@ -352,6 +394,7 @@ export function PackageCard({
                             </button>
 
                             <button
+                                type="button"
                                 onClick={onDelete}
                                 className="text-[9.5px] font-semibold text-[#9B1C1C] hover:underline"
                             >
@@ -370,6 +413,7 @@ export function PackageCard({
 }
 
 // ─── Package Form Modal ───────────────────────────────────────────────────────
+
 
 export function PackageFormModal({
                                      show,

@@ -4,7 +4,6 @@ import * as React from "react";
 import {
     AlertTriangle,
     ChevronDown,
-    ChevronRight,
     RefreshCw,
     Search,
     Store,
@@ -324,42 +323,47 @@ export function PageHeader({
                                onRefresh,
                            }: {
     title: string;
-    badge: string;
+    badge?: string;
     role: InventoryRole;
     onRefresh: () => void;
 }) {
-    const currentMonth = new Date().toLocaleDateString("en-PH", {
+    const currentMonth = new Date().toLocaleDateString("en-US", {
         month: "long",
         year: "numeric",
     });
 
+    const showBranchBadge = Boolean(badge && badge !== "By Branch");
+
     return (
-        <div className="sticky top-0 z-20 border-b border-[#E9E0EF] bg-[#FFFDF8]/95 backdrop-blur">
-            <div className="flex items-center justify-between px-5 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="font-serif text-[22px] font-semibold text-[#1A1220]">
+        <div className="sticky top-0 z-20 font-sans border-b border-[#E9E0EF] bg-[#FFFDF8]/95 backdrop-blur">
+            <div className="flex items-center justify-between px-6 py-3">
+                <div className="flex items-center gap-3">
+                    <h1 className="text-[25px] font-bold text-[#1A1220]">
                         {title}
                     </h1>
-                    <span className="rounded-md bg-[#EFE8F8] px-3 py-1 text-xs font-medium text-[#4E2C66]">
-                        {badge}
-                    </span>
+
+                    {showBranchBadge && (
+                        <span className="rounded-lg bg-[#EFE8F8] px-3.5 py-1.5 text-sm font-medium text-[#4E2C66]">
+                            {badge}
+                        </span>
+                    )}
                 </div>
 
-                <div className="flex items-center gap-2">
-                    <div className="rounded-lg border border-[#E6DDF0] bg-white px-4 py-2 text-xs text-[#6A5D6F] shadow-sm">
+                <div className="flex items-center gap-2.5">
+                    <div className="rounded-xl border border-[#E6DDF0] bg-white px-3.5 py-2.5 text-sm text-[#6A5D6F] shadow-sm">
                         {currentMonth}
                     </div>
 
                     <button
                         type="button"
                         onClick={onRefresh}
-                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#E6DDF0] bg-white text-[#5F4E75] shadow-sm hover:bg-[#F7F1FF]"
+                        className="flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-[#E6DDF0] bg-white text-[#5F4E75] shadow-sm hover:bg-[#F7F1FF]"
                         title="Refresh"
                     >
-                        <RefreshCw size={15} />
+                        <RefreshCw size={14} />
                     </button>
 
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2B174C] text-xs font-semibold text-white shadow-sm">
+                    <div className="flex h-[42px] w-[42px] items-center justify-center rounded-full bg-[#2B174C] text-xs font-semibold text-white shadow-sm">
                         {role === "owner" ? "OW" : role === "staff" ? "ST" : "MG"}
                     </div>
                 </div>
@@ -384,7 +388,7 @@ export function SearchAndActions({
     onUploadFile: () => void;
 }) {
     return (
-        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="mb-4 flex flex-col gap-3 font-sans lg:flex-row lg:items-center">
             <div className="relative flex-1">
                 <Search
                     size={15}
@@ -401,7 +405,7 @@ export function SearchAndActions({
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         setSearch(e.target.value)
                     }
-                    className="w-full rounded-xl border border-[#E3D8EA] bg-white px-4 py-3 pl-10 text-sm text-[#1A1220] outline-none shadow-sm placeholder:text-[#9B8AAA] focus:border-[#2B174C]"
+                    className="w-full rounded-xl border border-[#E3D8EA] bg-white px-4 py-2.5 pl-10 font-sans text-sm text-[#1A1220] outline-none shadow-sm placeholder:text-[#9B8AAA] focus:border-[#2B174C]"
                 />
             </div>
 
@@ -546,14 +550,10 @@ export function StatCard({
     value: React.ReactNode;
 }) {
     return (
-        <div className="rounded-2xl border border-[#E6DDF0] bg-white px-5 py-4 shadow-sm">
-            <p className="text-[11px] font-semibold text-[#806A8C]">
-                {label}
-            </p>
+        <div className="min-h-[102px] rounded-[14px] border border-[#E6DDF0] bg-white p-3 shadow-sm">
+            <p className="text-xs font-semibold text-[#2B174C]">{label}</p>
 
-            <div className="mt-3">
-                {value}
-            </div>
+            <div className="mt-1">{value}</div>
         </div>
     );
 }
@@ -571,33 +571,44 @@ export function CombinedStockCard({
         <button
             type="button"
             onClick={onClick}
-            className="rounded-2xl border border-[#E6DDF0] bg-white px-5 py-4 text-left shadow-sm transition hover:border-[#F5D56B] hover:bg-[#FFFCF2] hover:shadow-md"
+            title="Click to view stock alert details"
+            aria-label={`View stock alerts: ${lowStock} low stock and ${outStock} out of stock`}
+            className="group min-h-[102px] rounded-[14px] border border-[#E6DDF0] bg-white p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[#D9C4EE] hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2B174C] focus-visible:ring-offset-2"
         >
-            <div className="mb-3 flex items-center justify-between">
-                <p className="text-[11px] font-semibold text-[#806A8C]">
+            <div className="mb-1.5 flex items-center justify-between">
+                <p className="text-xs font-semibold text-[#2B174C]">
                     Stock Alerts
                 </p>
 
-                <AlertTriangle size={15} className="text-[#8A5A00]" />
+                <div className="flex items-center gap-1 text-[#2B174C]">
+                    <span className="max-w-0 overflow-hidden whitespace-nowrap text-[10px] font-semibold opacity-0 transition-all duration-200 group-hover:max-w-[34px] group-hover:opacity-100">
+                        View
+                    </span>
+
+                    <AlertTriangle
+                        size={14}
+                        className="text-[#8A5A00] transition-transform duration-200 group-hover:scale-110"
+                    />
+                </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-lg border border-[#F5D56B] bg-[#FFF8D8] px-3 py-2 text-center">
-                    <p className="text-[10px] font-semibold text-[#8A5A00]">
+                <div className="rounded-[8px] border border-[#F5D56B] bg-[#FFF8D8] px-2 py-1.5 text-center">
+                    <p className="whitespace-nowrap text-[9px] font-semibold leading-none text-[#8A5A00]">
                         Low Stock
                     </p>
 
-                    <p className="mt-1 text-lg font-bold leading-none text-[#8A5A00]">
+                    <p className="mt-1 text-[16px] font-bold leading-none text-[#8A5A00]">
                         {formatNumber(lowStock)}
                     </p>
                 </div>
 
-                <div className="rounded-lg border border-[#F3A3A3] bg-[#FFE5E5] px-3 py-2 text-center">
-                    <p className="text-[10px] font-semibold text-[#9A2424]">
+                <div className="rounded-[8px] border border-[#F3A3A3] bg-[#FFE5E5] px-2 py-1.5 text-center">
+                    <p className="whitespace-nowrap text-[9px] font-semibold leading-none text-[#9A2424]">
                         Out of Stock
                     </p>
 
-                    <p className="mt-1 text-lg font-bold leading-none text-[#9A2424]">
+                    <p className="mt-1 text-[16px] font-bold leading-none text-[#9A2424]">
                         {formatNumber(outStock)}
                     </p>
                 </div>
@@ -640,7 +651,7 @@ function StockAlertsDialog({
                         </div>
 
                         <div>
-                            <h3 className="font-serif text-xl font-semibold text-[#1A1220]">
+                            <h3 className="text-[19px] font-bold text-[#1A1220]">
                                 Restock Alerts
                             </h3>
 
@@ -842,11 +853,11 @@ export function InventoryStats({
 
     return (
         <>
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="mb-3 grid gap-3 lg:grid-cols-4">
                 <StatCard
                     label="Products"
                     value={
-                        <p className="font-serif text-[38px] font-semibold leading-none text-[#1A1220]">
+                        <p className="truncate text-[19px] font-bold leading-tight text-[#1A1220]">
                             {formatNumber(totalProducts)}
                         </p>
                     }
@@ -855,7 +866,7 @@ export function InventoryStats({
                 <StatCard
                     label="Total Stock"
                     value={
-                        <p className="font-serif text-[38px] font-semibold leading-none text-[#1A1220]">
+                        <p className="truncate text-[19px] font-bold leading-tight text-[#1A1220]">
                             {formatNumber(totalStock)}
                         </p>
                     }
@@ -870,7 +881,7 @@ export function InventoryStats({
                 <StatCard
                     label="Inventory Value"
                     value={
-                        <p className="font-serif text-[38px] font-semibold leading-none text-[#1A1220]">
+                        <p className="truncate text-[19px] font-bold leading-tight text-[#1A1220]">
                             {money(value)}
                         </p>
                     }
@@ -925,7 +936,7 @@ export function BranchListItem({
         >
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                    <p className="truncate font-serif text-base font-semibold text-[#1A1220]">
+                    <p className="truncate text-base font-semibold text-[#1A1220]">
                         {branch.branchName}
                     </p>
                     <p className="mt-1 text-xs text-[#8A7A91]">
@@ -959,7 +970,7 @@ export function CategoryPills({
     setSelectedCategory: (value: string) => void;
 }) {
     return (
-        <section className="rounded-2xl border border-[#E6DDF0] bg-white p-4 shadow-sm">
+        <section className="rounded-2xl border border-[#E6DDF0] bg-white p-4 font-sans shadow-sm">
             <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-[#1A1220]">Categories</h2>
                 <span className="text-xs text-[#9B8AAA]">{categories.length} total</span>
@@ -1197,24 +1208,33 @@ export function ProductTable({
 
                     return (
                         <React.Fragment key={p.id}>
-                            <tr className="border-b border-[#EFE7F4] last:border-0">
+                            <tr
+                                onClick={
+                                    hasExpandableVariants
+                                        ? () => toggleExpanded(p.id)
+                                        : undefined
+                                }
+                                className={`border-b border-[#EFE7F4] transition ${
+                                    hasExpandableVariants
+                                        ? "cursor-pointer hover:bg-[#FFFCF7]"
+                                        : ""
+                                } ${isExpanded ? "bg-[#F9F4FF]" : "bg-white"}`}
+                            >
                                 <td className="py-4 pr-3">
-                                    <div className="flex items-start gap-2">
+                                    <div className="flex items-start gap-2.5">
                                         {hasExpandableVariants ? (
-                                            <button
-                                                type="button"
-                                                onClick={() => toggleExpanded(p.id)}
-                                                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#E6DDF0] bg-white text-[#2B174C] hover:bg-[#F7F1FF]"
-                                                title={isExpanded ? "Hide variants" : "Show variants"}
-                                            >
-                                                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                                            </button>
+                                            <ChevronDown
+                                                size={14}
+                                                className={`mt-1 shrink-0 text-[#2B174C] transition ${
+                                                    isExpanded ? "rotate-180" : ""
+                                                }`}
+                                            />
                                         ) : (
-                                            <span className="h-6 w-6 shrink-0" />
+                                            <span className="h-[14px] w-[14px] shrink-0" />
                                         )}
 
                                         <div>
-                                            <p className="font-serif font-semibold text-[#1A1220]">
+                                            <p className="font-semibold text-[#1A1220]">
                                                 {p.name}
                                             </p>
 
@@ -1271,7 +1291,10 @@ export function ProductTable({
                                 <td className="py-4 text-center">
                                     <button
                                         type="button"
-                                        onClick={() => onEdit(p)}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            onEdit(p);
+                                        }}
                                         className="mr-3 text-xs font-semibold text-[#2B174C] hover:underline"
                                     >
                                         Edit
@@ -1279,7 +1302,10 @@ export function ProductTable({
 
                                     <button
                                         type="button"
-                                        onClick={() => onDelete(p)}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            onDelete(p);
+                                        }}
                                         className="text-xs font-semibold text-red-500 hover:underline"
                                     >
                                         Delete
@@ -1295,7 +1321,7 @@ export function ProductTable({
                                 return (
                                     <tr
                                         key={variant.id}
-                                        className="border-b border-[#E6DDF0] bg-[#F7F1FF]"
+                                        className="border-b border-[#EFE7F4] bg-[#FCF9FF]"
                                     >
                                         <td className="py-3 pr-3">
                                             <div className="ml-8 flex items-center gap-3">
@@ -1379,9 +1405,9 @@ export function ProductListSection({
     onDelete: (p: Product) => void;
 }) {
     return (
-        <section className="rounded-2xl border border-[#E6DDF0] bg-white p-4 shadow-sm">
+        <section className="rounded-2xl border border-[#E6DDF0] bg-white p-4 font-sans shadow-sm">
             <div className="mb-4">
-                <h2 className="font-serif text-base font-semibold text-[#1A1220]">
+                <h2 className="text-sm font-semibold text-[#1A1220]">
                     {title}
                 </h2>
                 <p className="text-xs text-[#9B8AAA]">
@@ -1432,7 +1458,7 @@ export function BranchInventoryView({
     }, [selectedBranch]);
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-4 font-sans">
             <InventoryStats
                 products={inv.baseProducts}
                 onRestock={inv.handleEditProduct}
@@ -1484,7 +1510,7 @@ export function InventoryDialogs({ inv }: { inv: InventoryController }) {
                         ].join(" ")}
                     >
                         <div className="mb-4 flex items-center justify-between">
-                            <h2 className="font-serif text-lg font-semibold text-[#1A1220]">
+                            <h2 className="text-[18px] font-bold text-[#1A1220]">
                                 {inv.formMode === "category"
                                     ? "Manage Categories"
                                     : inv.editingId
@@ -1526,7 +1552,7 @@ export function InventoryDialogs({ inv }: { inv: InventoryController }) {
                     <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6">
                         <div className="mb-3 flex items-start justify-between gap-4">
                             <div>
-                                <h3 className="font-serif text-xl font-semibold text-[#1A1220]">
+                                <h3 className="text-[19px] font-bold text-[#1A1220]">
                                     {productSaveTitle}
                                 </h3>
                                 <p className="mt-1 text-sm text-[#6A5D6F]">
@@ -1568,7 +1594,7 @@ export function InventoryDialogs({ inv }: { inv: InventoryController }) {
                     <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl sm:p-6">
                         <div className="mb-4 flex items-start justify-between gap-4">
                             <div>
-                                <h3 className="font-serif text-xl font-semibold text-[#1A1220]">
+                                <h3 className="text-[19px] font-bold text-[#1A1220]">
                                     Upload Inventory File
                                 </h3>
                                 <p className="mt-1 text-sm text-[#6A5D6F]">
@@ -1630,7 +1656,7 @@ export function InventoryDialogs({ inv }: { inv: InventoryController }) {
                     <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6">
                         <div className="mb-4 flex items-start justify-between gap-4">
                             <div>
-                                <h3 className="font-serif text-xl font-semibold text-[#1A1220]">
+                                <h3 className="text-[19px] font-bold text-[#1A1220]">
                                     Confirm Imported Products
                                 </h3>
                                 <p className="mt-1 text-sm text-[#6A5D6F]">
@@ -1677,7 +1703,7 @@ export function InventoryDialogs({ inv }: { inv: InventoryController }) {
                                         <React.Fragment key={product.tempId}>
                                             <tr className="border-b border-[#EFE7F4]">
                                                 <td className="px-3 py-4">
-                                                    <p className="font-serif text-sm font-semibold text-[#1A1220]">
+                                                    <p className="text-sm font-semibold text-[#1A1220]">
                                                         {product.name || "Unnamed Product"}
                                                     </p>
                                                     {product.hasVariants && (
@@ -1803,7 +1829,7 @@ export function InventoryDialogs({ inv }: { inv: InventoryController }) {
             {inv.showDeleteProductDialog && inv.productToDelete && (
                 <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
                     <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl sm:p-6">
-                        <h3 className="font-serif text-lg font-semibold text-[#1A1220]">
+                        <h3 className="text-[18px] font-bold text-[#1A1220]">
                             Delete Product
                         </h3>
                         <p className="mt-1 text-sm text-[#6A5D6F]">
@@ -1946,7 +1972,7 @@ function CategoryForm({ inv }: { inv: InventoryController }) {
             {showAddCategoryDialog && (
                 <div className="fixed inset-0 z-80 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
                     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-                        <h3 className="font-serif text-lg font-semibold text-[#1A1220]">
+                        <h3 className="text-[18px] font-bold text-[#1A1220]">
                             Add Category
                         </h3>
 
@@ -1982,7 +2008,7 @@ function CategoryForm({ inv }: { inv: InventoryController }) {
             <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
                 <div className="flex h-full min-h-0 flex-col rounded-2xl border border-[#E6DDF0] bg-[#FFFCF7] p-4">
                     <div>
-                        <p className="font-serif text-base font-semibold text-[#1A1220]">
+                        <p className="text-sm font-semibold text-[#1A1220]">
                             Add New Category
                         </p>
                         <p className="mt-1 text-xs text-[#9B8AAA]">
@@ -2013,7 +2039,7 @@ function CategoryForm({ inv }: { inv: InventoryController }) {
 
                 <div className="flex h-full min-h-0 flex-col rounded-2xl border border-[#E6DDF0] bg-white p-4">
                     <div className="mb-3 shrink-0">
-                        <p className="font-serif text-base font-semibold text-[#1A1220]">
+                        <p className="text-sm font-semibold text-[#1A1220]">
                             Existing Categories
                         </p>
                         <p className="text-xs text-[#9B8AAA]">
@@ -2045,7 +2071,7 @@ function CategoryForm({ inv }: { inv: InventoryController }) {
                     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
                         <div className="mb-4 flex items-start justify-between gap-3">
                             <div>
-                                <h3 className="font-serif text-lg font-semibold text-[#1A1220]">
+                                <h3 className="text-[18px] font-bold text-[#1A1220]">
                                     Edit Category
                                 </h3>
                                 <p className="mt-1 text-xs text-[#8A7A91]">
@@ -2098,7 +2124,7 @@ function CategoryForm({ inv }: { inv: InventoryController }) {
             {showConfirmEditCategoryDialog && (
                 <div className="fixed inset-0 z-80 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
                     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-                        <h3 className="font-serif text-lg font-semibold text-[#1A1220]">
+                        <h3 className="text-[18px] font-bold text-[#1A1220]">
                             Confirm Category Update
                         </h3>
 
@@ -2149,7 +2175,7 @@ function CategoryForm({ inv }: { inv: InventoryController }) {
             {showCannotDeleteCategoryDialog && (
                 <div className="fixed inset-0 z-80 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
                     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-                        <h3 className="font-serif text-lg font-semibold text-[#1A1220]">
+                        <h3 className="text-[18px] font-bold text-[#1A1220]">
                             Cannot Delete Category
                         </h3>
 
@@ -2182,7 +2208,7 @@ function CategoryForm({ inv }: { inv: InventoryController }) {
             {showDeleteCategoryDialog && (
                 <div className="fixed inset-0 z-80 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
                     <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-                        <h3 className="font-serif text-lg font-semibold text-[#1A1220]">
+                        <h3 className="text-[18px] font-bold text-[#1A1220]">
                             Delete Category
                         </h3>
 
@@ -2317,7 +2343,7 @@ function ProductForm({ inv }: { inv: InventoryController }) {
             <div className="rounded-xl border border-[#E6DDF0] bg-[#FFFCF7] p-4">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <p className="font-serif text-sm font-semibold text-[#1A1220]">
+                        <p className="text-sm font-semibold text-[#1A1220]">
                             Product Variants
                         </p>
                         <p className="mt-0.5 text-xs text-[#9B8AAA]">

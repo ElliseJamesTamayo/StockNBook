@@ -17,15 +17,12 @@ export default function InventoryPage() {
     return (
         <RequirePermission permission="inventory">
             <div
-                className="flex min-h-screen text-[#1A1220]"
-                style={{
-                    backgroundColor: "#FDFAF4",
-                    fontFamily: "Georgia, 'Times New Roman', serif",
-                }}
+                className="flex min-h-screen font-sans text-[#1A1220]"
+                style={{ backgroundColor: "#FDFAF4" }}
             >
                 <RoleSidebar />
 
-                <main className="min-w-0 flex-1 overflow-x-hidden">
+                <main className="min-w-0 flex-1 overflow-x-hidden font-sans">
                     {role === "owner" ? (
                         <OwnerInventory />
                     ) : role === "staff" ? (

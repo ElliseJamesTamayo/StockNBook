@@ -80,6 +80,13 @@ export default function RoleSidebar() {
         return permissions[permission] === true;
     };
 
+    // Analytics and Forecasting are available to every signed-in role.
+    const canViewAnalytics =
+        role === "owner" || role === "manager" || role === "staff";
+
+    const canViewForecasting =
+        role === "owner" || role === "manager" || role === "staff";
+
     const handleLogout = () => {
         if (typeof window === "undefined") return;
 
@@ -225,28 +232,37 @@ export default function RoleSidebar() {
                         </>
                     )}
 
-                    {(role === "owner" || canAccess("reports")) && (
+                    {(canViewAnalytics || canViewForecasting || canAccess("reports")) && (
                         <>
                             <p className="mb-1 mt-3 px-2 text-[9px] uppercase tracking-[0.15em] text-white/30">
                                 Analytics
                             </p>
 
                             <div className="space-y-0.2">
+                                {canViewAnalytics && (
+                                    <Link
+                                        href="/analytics"
+                                        className="block rounded-lg px-3 py-2 text-[11px] text-white/45 hover:bg-white/10"
+                                    >
+                                        Analytics
+                                    </Link>
+                                )}
+
+                                {canViewForecasting && (
+                                    <Link
+                                        href="/dashboard/forecasting"
+                                        className="block rounded-lg px-3 py-2 text-[11px] text-white/45 hover:bg-white/10"
+                                    >
+                                        Forecasting
+                                    </Link>
+                                )}
+
                                 {canAccess("reports") && (
                                     <Link
                                         href="/reports"
                                         className="block rounded-lg px-3 py-2 text-[11px] text-white/45 hover:bg-white/10"
                                     >
                                         Reports
-                                    </Link>
-                                )}
-
-                                {role === "owner" && (
-                                    <Link
-                                        href="/forecasting"
-                                        className="block rounded-lg px-3 py-2 text-[11px] text-white/45 hover:bg-white/10"
-                                    >
-                                        Forecasting
                                     </Link>
                                 )}
                             </div>
