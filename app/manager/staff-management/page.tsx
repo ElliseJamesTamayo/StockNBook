@@ -1,6 +1,7 @@
 "use client";
 
 import RoleSidebar from "@/components/sidebar/RoleSidebar";
+import { RefreshCw, UserPlus, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -62,12 +63,29 @@ const defaultPermissions: StaffPermissions = {
     reports_access: "none",
 };
 
+function formatCurrentDateTime(value: Date) {
+    const dateLabel = value.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+    });
+
+    const timeLabel = value
+        .toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+        })
+        .toLowerCase();
+
+    return `${dateLabel} | ${timeLabel}`;
+}
+
 export default function ManagerStaffManagementPage() {
     const router = useRouter();
 
-    const [managerName, setManagerName] = useState("Manager");
-    const [storeName, setStoreName] = useState("StockNBook");
     const [branchName, setBranchName] = useState("Assigned branch");
+    const [currentDateTime, setCurrentDateTime] = useState<Date | null>(null);
 
     const [staffName, setStaffName] = useState("");
     const [staffEmail, setStaffEmail] = useState("");
@@ -86,17 +104,6 @@ export default function ManagerStaffManagementPage() {
     const [editPermissions, setEditPermissions] =
         useState<StaffPermissions>(defaultPermissions);
     const [savingEdit, setSavingEdit] = useState(false);
-
-    const getInitials = (name: string) => {
-        return (
-            name
-                ?.split(" ")
-                .map((word) => word[0])
-                .join("")
-                .slice(0, 2)
-                .toUpperCase() || "M"
-        );
-    };
 
     const getToken = () => sessionStorage.getItem("token") || "";
 
@@ -170,12 +177,21 @@ export default function ManagerStaffManagementPage() {
             return;
         }
 
-        setManagerName(sessionStorage.getItem("manager_name") || "Manager");
-        setStoreName(sessionStorage.getItem("store_name") || "StockNBook");
         setBranchName(sessionStorage.getItem("branch_name") || "Assigned branch");
 
         loadStaff();
     }, [router, loadStaff]);
+
+    useEffect(() => {
+        const updateDateTime = () => setCurrentDateTime(new Date());
+
+        updateDateTime();
+        const timer = window.setInterval(updateDateTime, 30_000);
+
+        return () => {
+            window.clearInterval(timer);
+        };
+    }, []);
 
     const updateFeatureAccess = (
         feature: "pos" | "bookings" | "inventory" | "packages",
@@ -368,60 +384,69 @@ export default function ManagerStaffManagementPage() {
     };
 
     return (
-        <div
-            style={{
-                backgroundColor: "#FDFAF4",
-                fontFamily: "Georgia, 'Times New Roman', serif",
-            }}
-            className="flex min-h-screen text-[#1A1220]"
-        >
+        <div className="flex min-h-screen bg-[#FDFAF4] font-sans text-[#1A1220]">
             <RoleSidebar />
 
-            <main className="flex-1 overflow-y-auto">
-                <div className="flex h-[58px] items-center justify-between border-b border-[#EBE4F0] bg-white px-[18px]">
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-[20px] font-medium text-[#1A1220]">
-                            Add Staff
-                        </h1>
+            <main className="min-w-0 flex-1 overflow-y-auto">
+                <header className="sticky top-0 z-20 border-b border-[#E9E0EF] bg-[#FFFDF8]/95 backdrop-blur">
+                    <div className="flex min-h-[72px] flex-wrap items-center justify-between gap-4 px-6 py-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <h1 className="truncate text-[25px] font-bold text-[#1A1220]">
+                                Add Staff
+                            </h1>
 
-                        <span className="rounded-[7px] bg-[#F2ECFA] px-3 py-1 text-[11px] font-medium text-[#5B447A]">
-                            {branchName}
-                        </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                        <div className="rounded-[9px] border border-[#EBE4F0] bg-white px-4 py-1.5 text-[12px] text-[#6E5F80]">
-                            {new Date().toLocaleDateString("en-US", {
-                                month: "long",
-                                year: "numeric",
-                            })}
+                            <span
+                                title={branchName}
+                                className="max-w-[220px] truncate rounded-lg bg-[#EFE8F8] px-3.5 py-1.5 text-sm font-medium text-[#4E2C66]"
+                            >
+                                {branchName}
+                            </span>
                         </div>
 
-                        <div className="h-[34px] w-[34px] rounded-[9px] border border-[#EBE4F0] bg-white" />
+                        <div className="flex items-center gap-2.5">
+                            <span className="inline-flex h-[42px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3.5 text-sm font-semibold text-[#2B174C] shadow-sm">
+                                {currentDateTime
+                                    ? formatCurrentDateTime(currentDateTime)
+                                    : "Loading date..."}
+                            </span>
 
-                        <div className="flex h-[38px] w-[38px] items-center justify-center rounded-full bg-[#2D1B4E] text-[13px] font-semibold text-white">
-                            {getInitials(managerName)}
+                            <button
+                                type="button"
+                                onClick={() => void loadStaff()}
+                                disabled={pageLoading}
+                                aria-label="Refresh staff"
+                                title="Refresh staff"
+                                className="inline-flex h-[42px] items-center gap-2 rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                <RefreshCw
+                                    size={16}
+                                    className={pageLoading ? "animate-spin" : ""}
+                                />
+                                Refresh
+                            </button>
                         </div>
                     </div>
-                </div>
+                </header>
 
-                <section className="mx-auto max-w-3xl px-[18px] py-[20px]">
-                    <div className="rounded-[15px] border border-[#EBE4F0] bg-white p-5">
-                        <div className="flex items-start gap-4">
-                            <div className="h-[48px] w-[48px] rounded-[14px] bg-[#E8E0F2]" />
+                <section className="mx-auto max-w-5xl space-y-4 px-6 py-4">
+                    <div className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm">
+                        <div className="flex items-start gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EFE8F8] text-[#4E2C66]">
+                                <UserPlus size={18} />
+                            </div>
 
                             <div>
-                                <h2 className="text-[19px] font-medium text-[#1A1220]">
+                                <h2 className="text-[16px] font-bold text-[#1A1220]">
                                     Add a staff member
                                 </h2>
 
-                                <p className="mt-1 text-[12px] text-[#7A6E88]">
-                                    They&apos;ll receive an email invite to set up their account.
+                                <p className="mt-1 text-xs leading-5 text-[#7A6A84]">
+                                    Send an email invite and choose which features this staff member can access.
                                 </p>
                             </div>
                         </div>
 
-                        <div className="mt-6 grid gap-4 md:grid-cols-2">
+                        <div className="mt-5 grid gap-4 md:grid-cols-2">
                             <FormInput
                                 label="Full name"
                                 placeholder="Pedro Ramos"
@@ -437,16 +462,16 @@ export default function ManagerStaffManagementPage() {
                             />
                         </div>
 
-                        <div className="mt-6">
-                            <h3 className="text-[14px] font-semibold text-[#1A1220]">
-                                Feature access for this staff member
+                        <div className="mt-5 border-t border-[#E6DDF0] pt-5">
+                            <h3 className="text-[16px] font-bold text-[#1A1220]">
+                                Feature access
                             </h3>
 
-                            <p className="mt-1 text-[12px] text-[#7A6E88]">
+                            <p className="mt-1 text-xs text-[#7A6A84]">
                                 Access applies to {branchName} only.
                             </p>
 
-                            <div className="mt-4 space-y-2">
+                            <div className="mt-4 space-y-3">
                                 <DashboardAccessRow
                                     checked={permissions.dashboard}
                                     onChange={(checked) =>
@@ -500,11 +525,11 @@ export default function ManagerStaffManagementPage() {
                             </div>
                         </div>
 
-                        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                        <div className="mt-5 grid gap-3 sm:grid-cols-2">
                             <button
                                 onClick={handleSendInvite}
                                 disabled={loading}
-                                className="flex-1 rounded-[12px] bg-[#2D1B4E] px-5 py-3 text-[14px] font-semibold text-white disabled:opacity-60"
+                                className="inline-flex h-[42px] items-center justify-center rounded-xl bg-[#2B174C] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                                 {loading ? "Sending..." : "Send invite"}
                             </button>
@@ -512,7 +537,7 @@ export default function ManagerStaffManagementPage() {
                             <button
                                 onClick={clearForm}
                                 type="button"
-                                className="flex-1 rounded-[12px] border border-[#E4D9EE] bg-[#FFFDF9] px-5 py-3 text-[14px] font-medium text-[#6E5F80]"
+                                className="inline-flex h-[42px] items-center justify-center rounded-xl border border-[#E6DDF0] bg-white px-5 text-sm font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF]"
                             >
                                 Clear
                             </button>
@@ -520,20 +545,20 @@ export default function ManagerStaffManagementPage() {
                     </div>
 
                     {inviteLink && (
-                        <div className="mt-4 rounded-[15px] border border-[#EBE4F0] bg-white p-5">
-                            <h2 className="text-[15px] font-semibold text-[#2D1B4E]">
+                        <div className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm">
+                            <h2 className="text-[16px] font-bold text-[#1A1220]">
                                 Staff invite link
                             </h2>
 
-                            <p className="mt-1 text-[12px] text-[#7A6E88]">
+                            <p className="mt-1 text-xs text-[#7A6A84]">
                                 Copy this link and use it to activate the staff account.
                             </p>
 
-                            <div className="mt-3 flex gap-2">
+                            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                                 <input
                                     readOnly
                                     value={inviteLink}
-                                    className="w-full rounded-[10px] border border-[#E4D9EE] bg-[#FFFDFA] px-3 py-2 text-[11px] text-[#7A6E88] outline-none"
+                                    className="h-[42px] w-full rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-3 text-sm text-[#5F4E75] outline-none"
                                 />
 
                                 <button
@@ -542,7 +567,7 @@ export default function ManagerStaffManagementPage() {
                                         navigator.clipboard.writeText(inviteLink);
                                         alert("Staff invite link copied!");
                                     }}
-                                    className="rounded-[10px] bg-[#2D1B4E] px-4 py-2 text-[11px] font-semibold text-white"
+                                    className="inline-flex h-[42px] items-center justify-center rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31]"
                                 >
                                     Copy
                                 </button>
@@ -550,12 +575,15 @@ export default function ManagerStaffManagementPage() {
                         </div>
                     )}
 
-                    <div className="mt-4 rounded-[15px] border border-[#EBE4F0] bg-white p-5">
-                        <h2 className="text-[17px] font-medium text-[#1A1220]">
-                            Current staff
-                        </h2>
+                    <div className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm">
+                        <div className="flex items-center gap-2">
+                            <Users size={17} className="text-[#4E2C66]" />
+                            <h2 className="text-[16px] font-bold text-[#1A1220]">
+                                Current staff
+                            </h2>
+                        </div>
 
-                        <div className="mt-4 space-y-2">
+                        <div className="mt-4 space-y-3">
                             {pageLoading ? (
                                 <EmptyState text="Loading staff..." />
                             ) : staffList.length === 0 ? (
@@ -564,18 +592,18 @@ export default function ManagerStaffManagementPage() {
                                 staffList.map((staff) => (
                                     <div
                                         key={staff.id}
-                                        className="flex flex-col gap-3 rounded-[12px] border border-[#F0E8F5] bg-[#FFFDFA] px-4 py-3 md:flex-row md:items-center md:justify-between"
+                                        className="flex flex-col gap-3 rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-4 py-3 md:flex-row md:items-center md:justify-between"
                                     >
                                         <div className="min-w-0">
-                                            <p className="truncate text-[14px] font-medium text-[#1A1220]">
+                                            <p className="truncate text-sm font-semibold text-[#1A1220]">
                                                 {staff.name}
                                             </p>
 
-                                            <p className="mt-0.5 truncate text-[12px] text-[#7A6E88]">
+                                            <p className="mt-0.5 truncate text-xs text-[#7A6A84]">
                                                 {staff.email}
                                             </p>
 
-                                            <p className="mt-1 truncate text-[11px] text-[#7A6E88]">
+                                            <p className="mt-1 truncate text-xs text-[#806A8C]">
                                                 Access: {formatPermissions(staff.permissions)}
                                             </p>
                                         </div>
@@ -585,7 +613,7 @@ export default function ManagerStaffManagementPage() {
 
                                             <button
                                                 onClick={() => handleEditStaff(staff)}
-                                                className="rounded-[10px] border border-[#E4D9EE] bg-white px-3 py-2 text-[12px] font-medium text-[#2D1B4E]"
+                                                className="inline-flex h-[36px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3 text-xs font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF]"
                                             >
                                                 Edit access
                                             </button>
@@ -596,8 +624,8 @@ export default function ManagerStaffManagementPage() {
                         </div>
                     </div>
 
-                    <div className="mt-4 rounded-[15px] border border-[#EBE4F0] bg-white p-5">
-                        <h2 className="text-[17px] font-medium text-[#1A1220]">
+                    <div className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm">
+                        <h2 className="text-[16px] font-bold text-[#1A1220]">
                             Pending invites
                         </h2>
 
@@ -610,18 +638,18 @@ export default function ManagerStaffManagementPage() {
                                 pendingInvites.map((invite) => (
                                     <div
                                         key={invite.id}
-                                        className="flex flex-col gap-3 rounded-[12px] border border-[#F0E8F5] bg-[#FFFDFA] px-4 py-3 md:flex-row md:items-center md:justify-between"
+                                        className="flex flex-col gap-3 rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-4 py-3 md:flex-row md:items-center md:justify-between"
                                     >
                                         <div className="min-w-0">
-                                            <p className="truncate text-[14px] font-medium text-[#1A1220]">
+                                            <p className="truncate text-sm font-semibold text-[#1A1220]">
                                                 {invite.email}
                                             </p>
 
-                                            <p className="mt-0.5 text-[12px] text-[#7A6E88]">
+                                            <p className="mt-0.5 text-xs text-[#7A6A84]">
                                                 Invited {invite.invitedAt} · Expires {invite.expiresAt}
                                             </p>
 
-                                            <p className="mt-1 truncate text-[11px] text-[#7A6E88]">
+                                            <p className="mt-1 truncate text-xs text-[#806A8C]">
                                                 Access: {formatPermissions(invite.permissions)}
                                             </p>
                                         </div>
@@ -631,7 +659,7 @@ export default function ManagerStaffManagementPage() {
 
                                             <button
                                                 onClick={() => handleResendInvite(invite.email)}
-                                                className="rounded-[10px] border border-[#E4D9EE] bg-white px-3 py-2 text-[12px] font-medium text-[#2D1B4E]"
+                                                className="inline-flex h-[36px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3 text-xs font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF]"
                                             >
                                                 Resend
                                             </button>
@@ -645,28 +673,28 @@ export default function ManagerStaffManagementPage() {
             </main>
 
             {editingStaff && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
-                    <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-[16px] border border-[#EBE4F0] bg-white p-5 shadow-xl">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur-sm">
+                    <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-[18px] border border-[#E6DDF0] bg-white p-5 shadow-2xl">
                         <div className="flex items-start justify-between gap-4">
                             <div>
-                                <h2 className="text-[19px] font-medium text-[#1A1220]">
+                                <h2 className="text-[20px] font-bold text-[#1A1220]">
                                     Edit staff access
                                 </h2>
 
-                                <p className="mt-1 text-[12px] text-[#7A6E88]">
+                                <p className="mt-1 text-sm text-[#7A6A84]">
                                     Update permissions for {editingStaff.name}.
                                 </p>
                             </div>
 
                             <button
                                 onClick={() => setEditingStaff(null)}
-                                className="rounded-[9px] border border-[#EBE4F0] px-3 py-1.5 text-[12px] text-[#6E5F80]"
+                                className="inline-flex h-[36px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3 text-xs font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF]"
                             >
                                 Close
                             </button>
                         </div>
 
-                        <div className="mt-5 space-y-2">
+                        <div className="mt-5 space-y-3">
                             <DashboardAccessRow
                                 checked={editPermissions.dashboard}
                                 onChange={(checked) =>
@@ -719,10 +747,10 @@ export default function ManagerStaffManagementPage() {
                             />
                         </div>
 
-                        <div className="mt-5 flex gap-3">
+                        <div className="mt-5 grid gap-3 sm:grid-cols-2">
                             <button
                                 onClick={() => setEditingStaff(null)}
-                                className="flex-1 rounded-[12px] border border-[#E4D9EE] bg-white px-5 py-3 text-[13px] font-medium text-[#2D1B4E]"
+                                className="inline-flex h-[42px] items-center justify-center rounded-xl border border-[#E6DDF0] bg-white px-5 text-sm font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF]"
                             >
                                 Cancel
                             </button>
@@ -730,7 +758,7 @@ export default function ManagerStaffManagementPage() {
                             <button
                                 onClick={handleSaveEdit}
                                 disabled={savingEdit}
-                                className="flex-1 rounded-[12px] bg-[#2D1B4E] px-5 py-3 text-[13px] font-semibold text-white disabled:opacity-60"
+                                className="inline-flex h-[42px] items-center justify-center rounded-xl bg-[#2B174C] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                                 {savingEdit ? "Saving..." : "Save changes"}
                             </button>
@@ -856,7 +884,7 @@ function FormInput({
 }) {
     return (
         <div>
-            <label className="mb-2 block text-[12px] font-medium text-[#1A1220]">
+            <label className="mb-2 block text-sm font-medium text-[#1A1220]">
                 {label}
             </label>
 
@@ -864,7 +892,7 @@ function FormInput({
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder}
-                className="w-full rounded-[12px] border border-[#E4D9EE] bg-[#FFFDFA] px-4 py-3 text-[13px] text-[#1A1220] outline-none placeholder:text-[#9A8CAA] focus:border-[#BDAAD1]"
+                className="h-[42px] w-full rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-3 text-sm text-[#1A1220] outline-none placeholder:text-[#9B8AAA] transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10"
             />
         </div>
     );
@@ -878,14 +906,14 @@ function DashboardAccessRow({
     onChange: (checked: boolean) => void;
 }) {
     return (
-        <div className="flex items-center justify-between rounded-[12px] bg-[#FFFDFA] px-4 py-3">
-            <span className="text-[14px] text-[#1A1220]">Dashboard</span>
+        <div className="flex min-h-[58px] items-center justify-between rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-4 py-3">
+            <span className="text-sm font-semibold text-[#1A1220]">Dashboard</span>
 
             <button
                 type="button"
                 onClick={() => onChange(!checked)}
                 className={`relative h-[26px] w-[48px] rounded-full transition ${
-                    checked ? "bg-[#2D1B4E]" : "bg-[#E7DEEF]"
+                    checked ? "bg-[#2B174C]" : "bg-[#D8CBE7]"
                 }`}
             >
                 <span
@@ -910,15 +938,15 @@ function AccessModeRow({
     allowFull?: boolean;
 }) {
     return (
-        <div className="flex items-center justify-between rounded-[12px] bg-[#FFFDFA] px-4 py-3">
-            <span className="text-[14px] text-[#1A1220]">{label}</span>
+        <div className="flex min-h-[58px] items-center justify-between rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-4 py-3">
+            <span className="text-sm font-semibold text-[#1A1220]">{label}</span>
 
             <select
                 value={value}
                 onChange={(e) =>
                     onChange(e.target.value as AccessMode | ReportsAccessMode)
                 }
-                className="min-w-[128px] rounded-[10px] border border-[#E4D9EE] bg-white px-3 py-2 text-[11px] font-semibold text-[#2D1B4E] outline-none focus:border-[#2D1B4E]"
+                className="h-[36px] min-w-[136px] rounded-xl border border-[#E6DDF0] bg-white px-3 text-xs font-semibold text-[#2B174C] outline-none transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10"
             >
                 <option value="none">No access</option>
                 <option value="view">View only</option>
@@ -937,12 +965,12 @@ function StatusBadge({
 }) {
     const style =
         tone === "green"
-            ? "bg-[#EAF3DE] text-[#44670D]"
-            : "bg-[#FAEEDA] text-[#8A5B00]";
+            ? "border border-[#B7E9C8] bg-[#EDFBF1] text-[#138342]"
+            : "border border-[#F4D79A] bg-[#FFF8E8] text-[#A56607]";
 
     return (
         <span
-            className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${style}`}
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${style}`}
         >
             {label}
         </span>
@@ -951,7 +979,7 @@ function StatusBadge({
 
 function EmptyState({ text }: { text: string }) {
     return (
-        <div className="rounded-[12px] border border-dashed border-[#E9DFF1] bg-[#FFFDFA] px-4 py-5 text-[12px] text-[#7A6E88]">
+        <div className="rounded-xl border border-dashed border-[#E6DDF0] bg-[#FFFCF7] px-4 py-6 text-sm text-[#7A6A84]">
             {text}
         </div>
     );

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const FORECASTING_LAMBDA_URL =
     process.env.FORECASTING_LAMBDA_URL ||
     "https://your-lambda-function-url.lambda-url.region.on.aws";
@@ -34,7 +37,7 @@ export async function POST(request: NextRequest) {
             "get_inventory_forecast",
             "get_booking_forecast",
             "get_seasonal_analysis",
-            "get_forecasting_summary",
+            "get_forecast_report",
         ];
 
         if (!body.action || !validActions.includes(body.action)) {

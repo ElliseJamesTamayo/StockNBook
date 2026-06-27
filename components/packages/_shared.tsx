@@ -346,7 +346,7 @@ export function PackageCard({
                 }}
                 className="group cursor-pointer overflow-hidden rounded-[18px] border border-[#E6DDF0] bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-[#D4C1E7] hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2B174C] focus-visible:ring-offset-2"
             >
-                <div className="h-33 overflow-hidden bg-[#F5EEF6]">
+                <div className="h-36 overflow-hidden bg-[#F5EEF6]">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                         src={coverImage}
@@ -360,7 +360,7 @@ export function PackageCard({
                 </div>
 
                 <div
-                    className={`px-4 py-3.5 ${
+                    className={`px-4 py-4 ${
                         featured
                             ? "bg-[#C9951A] text-white"
                             : "bg-[#2D1B4E] text-white"
@@ -381,8 +381,8 @@ export function PackageCard({
                     </div>
                 </div>
 
-                <div className="p-4">
-                    <p className="line-clamp-2 min-h-10 text-[13px] leading-5 text-[#7A6A84]">
+                <div className="p-4.5">
+                    <p className="line-clamp-2 min-h-11 text-[13px] leading-5 text-[#7A6A84]">
                         {pkg.description || "No description"}
                     </p>
 
@@ -705,7 +705,12 @@ export function PackageFormModal({
     if (!show) return null;
 
     const discountNumber = Number(discountValue || 0);
-    const downPaymentNumber = Number(downPaymentAmount || 0);
+    const downPaymentInput = Number(downPaymentAmount || 0);
+    const isPercentageType = discountType === "percentage";
+    const calculatedDownPayment = isPercentageType
+        ? packagePrice * (downPaymentInput / 100)
+        : downPaymentInput;
+    const calculatedDiscount = Math.max(originalValue - packagePrice, 0);
     const selectableCategories = PACKAGE_CATEGORY_OPTIONS.filter(
         (option) => option !== "All"
     ) as PackageFormCategory[];
@@ -823,30 +828,34 @@ export function PackageFormModal({
                     </div>
 
                     {coverImage && (
-                        <div className="flex items-center gap-3 rounded-xl border border-[#E6DDF0] bg-[#FFFCF7] p-2.5">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                                src={coverImage}
-                                alt="Selected package cover preview"
-                                className="h-16 w-24 rounded-lg object-cover"
-                            />
-
-                            <div className="min-w-0 flex-1">
-                                <p className="text-sm font-semibold text-[#1A1220]">
-                                    Package picture selected
-                                </p>
-                                <p className="mt-0.5 text-xs text-[#7A6A84]">
-                                    This picture will be used as the package cover.
-                                </p>
+                        <div className="overflow-hidden rounded-xl border border-[#E6DDF0] bg-[#FFFCF7]">
+                            <div className="flex h-52 items-center justify-center bg-[#F7F1FF] p-2">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                    src={coverImage}
+                                    alt="Selected package cover preview"
+                                    className="h-full w-full rounded-lg object-contain"
+                                />
                             </div>
 
-                            <button
-                                type="button"
-                                onClick={onRemoveCoverImage}
-                                className="text-xs font-semibold text-red-500 hover:underline"
-                            >
-                                Remove
-                            </button>
+                            <div className="flex items-center justify-between gap-4 border-t border-[#E6DDF0] px-3 py-2.5">
+                                <div>
+                                    <p className="text-sm font-semibold text-[#1A1220]">
+                                        Package picture selected
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-[#7A6A84]">
+                                        This larger preview is the picture that will be used for the package cover.
+                                    </p>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={onRemoveCoverImage}
+                                    className="shrink-0 text-xs font-semibold text-red-500 hover:underline"
+                                >
+                                    Remove
+                                </button>
+                            </div>
                         </div>
                     )}
 
@@ -932,7 +941,7 @@ export function PackageFormModal({
                     </Card>
 
                     <div className="grid grid-cols-4 gap-3">
-                        <Field label="Discount Type">
+                        <Field label="Type">
                             <select
                                 value={discountType}
                                 onChange={(event) => {
@@ -940,6 +949,7 @@ export function PackageFormModal({
                                         event.target.value as DiscountType
                                     );
                                     setDiscountValue("");
+                                    setDownPaymentAmount("");
                                 }}
                                 className={fieldClass}
                             >
@@ -950,7 +960,7 @@ export function PackageFormModal({
 
                         <Field
                             label={
-                                discountType === "percentage"
+                                isPercentageType
                                     ? "Discount (%)"
                                     : "Discount (₱)"
                             }
@@ -959,7 +969,7 @@ export function PackageFormModal({
                                 type="number"
                                 min="0"
                                 max={
-                                    discountType === "percentage"
+                                    isPercentageType
                                         ? 100
                                         : originalValue
                                 }
@@ -968,7 +978,7 @@ export function PackageFormModal({
                                     setDiscountValue(event.target.value)
                                 }
                                 placeholder={
-                                    discountType === "percentage"
+                                    isPercentageType
                                         ? "e.g. 10"
                                         : "e.g. 500"
                                 }
@@ -976,16 +986,26 @@ export function PackageFormModal({
                             />
                         </Field>
 
-                        <Field label="Down Payment">
+                        <Field
+                            label={
+                                isPercentageType
+                                    ? "Down Payment (%)"
+                                    : "Down Payment (₱)"
+                            }
+                        >
                             <input
                                 type="number"
                                 min="0"
-                                max={packagePrice}
+                                max={isPercentageType ? 100 : packagePrice}
                                 value={downPaymentAmount}
                                 onChange={(event) =>
                                     setDownPaymentAmount(event.target.value)
                                 }
-                                placeholder="e.g. 1000"
+                                placeholder={
+                                    isPercentageType
+                                        ? "e.g. 30"
+                                        : "e.g. 1000"
+                                }
                                 className={fieldClass}
                             />
                         </Field>
@@ -1017,21 +1037,25 @@ export function PackageFormModal({
                         <SummaryBox
                             label="Discount"
                             value={
-                                discountType === "percentage"
-                                    ? `${discountNumber || 0}%`
-                                    : peso(discountNumber)
+                                isPercentageType
+                                    ? `${discountNumber || 0}% • ${peso(calculatedDiscount)}`
+                                    : peso(calculatedDiscount)
                             }
+                        />
+
+                        <SummaryBox
+                            label="Down Payment"
+                            value={
+                                isPercentageType
+                                    ? `${downPaymentInput || 0}% • ${peso(calculatedDownPayment)}`
+                                    : peso(calculatedDownPayment)
+                            }
+                            strong
                         />
 
                         <SummaryBox
                             label="Final Price"
                             value={peso(packagePrice)}
-                            strong
-                        />
-
-                        <SummaryBox
-                            label="Down Payment"
-                            value={peso(downPaymentNumber)}
                             strong
                         />
                     </div>
@@ -1093,7 +1117,12 @@ export function usePackageForm(
 
     const discountAmount = Math.min(computedDiscount, originalValue);
     const packagePrice = Math.max(originalValue - discountAmount, 0);
-    const downPaymentNumber = Number(downPaymentAmount || 0);
+
+    const downPaymentInput = Number(downPaymentAmount || 0);
+    const downPaymentNumber =
+        discountType === "percentage"
+            ? packagePrice * (downPaymentInput / 100)
+            : downPaymentInput;
 
     function reset() {
         setName("");
@@ -1125,9 +1154,22 @@ export function usePackageForm(
         setCoverImage(pkg.cover_image || "");
         setDuration(pkg.duration || "");
         setStatus(pkg.status);
-        setDiscountType(pkg.discount_type || "amount");
+
+        const savedDiscountType = pkg.discount_type || "amount";
+        const savedPackagePrice = Number(pkg.package_price || 0);
+        const savedDownPayment = Number(pkg.down_payment_amount || 0);
+
+        setDiscountType(savedDiscountType);
         setDiscountValue(String(pkg.discount_value || 0));
-        setDownPaymentAmount(String(pkg.down_payment_amount || 0));
+        setDownPaymentAmount(
+            savedDiscountType === "percentage" && savedPackagePrice > 0
+                ? String(
+                    Math.round(
+                        (savedDownPayment / savedPackagePrice) * 10000
+                    ) / 100
+                )
+                : String(savedDownPayment)
+        );
         setInclusions(pkg.inclusions || []);
         setError("");
         setShowForm(true);
@@ -1257,12 +1299,23 @@ export function usePackageForm(
             return;
         }
 
-        if (downPaymentNumber < 0) {
+        if (downPaymentInput < 0) {
             setError("Down payment cannot be negative.");
             return;
         }
 
-        if (downPaymentNumber > packagePrice) {
+        if (
+            discountType === "percentage" &&
+            downPaymentInput > 100
+        ) {
+            setError("Percentage down payment cannot exceed 100%.");
+            return;
+        }
+
+        if (
+            discountType === "amount" &&
+            downPaymentNumber > packagePrice
+        ) {
             setError("Down payment cannot exceed final package price.");
             return;
         }

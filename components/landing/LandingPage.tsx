@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, type FormEvent } from "react";
 import {
     AlertTriangle,
@@ -69,7 +70,7 @@ const pricingPlans: PricingPlan[] = [
             "Up to 3 staff accounts",
             "Low-stock notifications",
             "Sales and booking analytics",
-            "Downloadable reports",
+            "Owner-level reports",
             "Complete transaction history",
         ],
         buttonText: "Choose Business",
@@ -135,9 +136,14 @@ export default function LandingPage({
         <main className="min-h-screen overflow-x-hidden bg-[#FDFAF4] text-[#1A1220]">
             <nav className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-[#EBE4F0] bg-white px-6 lg:px-10">
                 <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#2D1B4E] text-[#C9951A]">
-                        <Package className="h-5 w-5" />
-                    </div>
+                    <Image
+                        src="/logo.png"
+                        alt="StockNBook logo"
+                        width={40}
+                        height={40}
+                        priority
+                        className="h-10 w-10 rounded-xl object-contain"
+                    />
 
                     <span className="text-lg font-semibold tracking-tight">
                         <span className="text-[#2D1B4E]">Stock</span>NBook
@@ -179,7 +185,7 @@ export default function LandingPage({
                 <div className="pb-14">
                     <div className="mb-5 inline-flex items-center gap-2 rounded-md border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-medium text-[#F5E8C0]">
                         <Sparkles className="h-3.5 w-3.5" />
-                        Built for event stylists & party suppliers
+                        Built for party supply businesses with booking services.
                     </div>
 
                     <h1 className="max-w-xl font-serif text-5xl leading-tight text-white lg:text-6xl">
@@ -188,8 +194,7 @@ export default function LandingPage({
                     </h1>
 
                     <p className="mt-5 max-w-md text-sm leading-7 text-white/60">
-                        Bookings, inventory, packages, and sales — managed beautifully.
-                        Built for Filipino event businesses that mean business.
+                        Manage bookings, inventory, packages, POS sales, staff access, and business insights in one organized system for party supply businesses with booking services.
                     </p>
 
                     <div className="mt-8 flex flex-wrap gap-3">
@@ -223,9 +228,9 @@ export default function LandingPage({
 
                     <div className="p-5">
                         <div className="grid gap-3 sm:grid-cols-3">
-                            <MiniStat label="Bookings" value="48" note="↑ +12%" />
-                            <MiniStat label="Revenue" value="₱84.5k" note="↑ +8%" />
-                            <MiniStat label="Low stock" value="3" note="Alert" danger />
+                            <MiniStat label="Total Sales" value="₱0" note="Sales overview" />
+                            <MiniStat label="Bookings" value="28" note="Booking records" />
+                            <MiniStat label="Low stock" value="2" note="Inventory alert" danger />
                         </div>
 
                         <div className="mt-5 text-xs font-semibold uppercase tracking-widest text-[#2D1B4E]">
@@ -235,23 +240,23 @@ export default function LandingPage({
                         <div className="mt-3 divide-y divide-[#EBE4F0]">
                             <EventRow
                                 color="#2D1B4E"
-                                title="Garcia Wedding"
-                                info="May 18 · ₱12,000"
-                                status="Confirmed"
+                                title="Customer Booking"
+                                info="Event schedule · Booking status"
+                                status="Recorded"
                             />
 
                             <EventRow
                                 color="#C9951A"
-                                title="Cruz Debut"
-                                info="May 22 · ₱8,500"
+                                title="Selected Package"
+                                info="Bookings Portal · Payment status"
                                 status="Pending"
                             />
 
                             <EventRow
                                 color="#F0997B"
-                                title="Santos Birthday"
-                                info="May 25 · ₱5,000"
-                                status="New"
+                                title="Inventory Update"
+                                info="Product quantity · Stock alert"
+                                status="Low stock"
                             />
                         </div>
                     </div>
@@ -260,10 +265,9 @@ export default function LandingPage({
 
             <section className="border-b border-[#F5E8C0] bg-[#FFFBF0] px-6 py-6">
                 <div className="mx-auto grid max-w-4xl grid-cols-2 gap-6 text-center md:grid-cols-4">
-                    <ProofStat value="500+" label="Event stylists" />
-                    <ProofStat value="₱2M+" label="Bookings managed" />
-                    <ProofStat value="4.9★" label="Average rating" />
-                    <ProofStat value="3 min" label="To get started" />
+                    <ProofStat value="01" label="Dashboard overview" />
+                    <ProofStat value="02" label="Booking records" />
+                    <ProofStat value="03" label="Inventory alerts" />
                 </div>
             </section>
 
@@ -274,50 +278,86 @@ export default function LandingPage({
                     </p>
 
                     <h2 className="mt-3 text-center font-serif text-4xl text-[#1A1220]">
-                        Everything your event business needs
+                        Everything your party supply and booking business needs
                     </h2>
 
                     <p className="mx-auto mt-3 max-w-xl text-center text-sm leading-6 text-[#7A6E88]">
-                        Built specifically for party suppliers and event stylists — not
-                        adapted from a generic tool.
+                        Built specifically for party supply businesses that manage bookings, packages, products, and daily sales.
                     </p>
 
-                    <div className="mt-12 grid overflow-hidden rounded-2xl border border-[#EBE4F0] md:grid-cols-3">
+                    <div className="mt-12 grid overflow-hidden rounded-2xl border border-[#EBE4F0] sm:grid-cols-2 lg:grid-cols-3">
                         <FeatureCard
                             number="01"
-                            title="Smart bookings"
-                            desc="Calendar view, booking statuses, and auto-reminders for every event."
+                            title="Dashboard"
+                            desc="View business summaries such as revenue, bookings, products, staff, branch performance, recent bookings, trends, and inventory alerts based on the user role."
                         />
 
                         <FeatureCard
                             number="02"
-                            title="Package builder"
-                            desc="Create styled packages with pricing tiers, inclusions, and add-ons."
+                            title="Booking Link / Bookings Portal"
+                            desc="Share a booking link where customers can view available packages and submit booking details through the Bookings Portal."
                         />
 
                         <FeatureCard
                             number="03"
-                            title="Inventory control"
-                            desc="Monitor party supplies, product quantities, and restock alerts."
+                            title="Bookings"
+                            desc="Manage customer bookings, schedules, selected packages, payment status, balances, booking progress, and booking history."
                         />
 
                         <FeatureCard
                             number="04"
-                            title="Sales / POS"
-                            desc="Quick checkout for walk-in and on-site event sales."
+                            title="Inventory"
+                            desc="Manage products, categories, stock levels, inventory value, low-stock alerts, out-of-stock items, and product uploads."
                         />
 
                         <FeatureCard
                             number="05"
-                            title="Revenue forecasting"
-                            desc="See projected income by month and season."
+                            title="Packages"
+                            desc="Create and manage packages with prices, down payments, included items, duration, availability, and package details shown in the Bookings Portal."
                         />
 
                         <FeatureCard
                             number="06"
-                            title="Booking link"
-                            desc="A public page where clients browse packages and book directly."
+                            title="Sales / POS"
+                            desc="Process product sales, add items to customer orders, calculate totals, record payments, and monitor daily sales."
                         />
+
+                        <FeatureCard
+                            number="07"
+                            title="Analytics"
+                            desc="Review sales growth, sales trends, peak booking days, peak booking times, and overall business performance."
+                        />
+
+                        <FeatureCard
+                            number="08"
+                            title="Forecasting"
+                            desc="Run demand forecasts for inventory, seasonal trends, and bookings to help identify high-demand items and possible stock risks."
+                        />
+
+                        <FeatureCard
+                            number="09"
+                            title="Reports"
+                            desc="Owners can access reports for inventory, restock history, booking history, sales, forecasting, and staff activity."
+                        />
+
+                        <FeatureCard
+                            number="10"
+                            title="Branches"
+                            desc="Owners can monitor branch revenue, branch bookings, setup status, and overall branch performance."
+                        />
+
+                        <FeatureCard
+                            number="11"
+                            title="Branch Managers"
+                            desc="Owners can view branch managers, assigned branches, manager status, and activate or deactivate manager access."
+                        />
+
+                        <FeatureCard
+                            number="12"
+                            title="Staff Management"
+                            desc="Managers can add staff members and assign which modules each staff member can access."
+                        />
+
                     </div>
                 </div>
             </section>
@@ -333,26 +373,26 @@ export default function LandingPage({
                 </p>
 
                 <h2 className="mt-3 text-center font-serif text-4xl">
-                    Up and running in minutes
+                    Manage operations in one clear flow
                 </h2>
 
                 <div className="mx-auto mt-12 grid max-w-5xl gap-6 md:grid-cols-3">
                     <StepCard
                         number="01"
-                        title="Add packages and inventory"
-                        desc="Set up your event packages, pricing tiers, and party supplies."
+                        title="Set up records and access"
+                        desc="Owners and managers can add products, categories, packages, staff members, and branch details based on their assigned access."
                     />
 
                     <StepCard
                         number="02"
-                        title="Share your booking link"
-                        desc="Clients browse, pick a package, and book directly."
+                        title="Manage bookings and daily operations"
+                        desc="Managers and staff can handle bookings, selected packages, payment status, POS sales, and inventory updates through their allowed modules."
                     />
 
                     <StepCard
                         number="03"
-                        title="Track, earn, and grow"
-                        desc="Monitor revenue, restock alerts, and upcoming events."
+                        title="Review performance by role"
+                        desc="Owners can review reports and forecasting, while managers can monitor dashboards, bookings, sales, and inventory alerts."
                     />
                 </div>
             </section>
@@ -360,11 +400,11 @@ export default function LandingPage({
             <section className="flex flex-col items-start justify-between gap-6 bg-[#FFFBF0] px-6 py-12 md:flex-row md:items-center lg:px-10">
                 <div>
                     <h2 className="font-serif text-3xl">
-                        Ready to run your business properly?
+                        Ready to organize your party supply and booking business?
                     </h2>
 
                     <p className="mt-2 text-sm text-[#7A6E88]">
-                        Join Filipino event stylists already using StockNBook.
+                        Start managing bookings, inventory, packages, POS sales, and staff access with StockNBook.
                     </p>
                 </div>
 

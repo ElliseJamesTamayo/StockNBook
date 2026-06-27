@@ -2,7 +2,7 @@
 
 import { getNextStatusConfig } from './_shared';
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronDown, RefreshCw, Search } from "lucide-react";
+import { CalendarDays, RefreshCw, Search } from "lucide-react";
 import {
     Booking,
     CalendarDropdown,
@@ -12,7 +12,6 @@ import {
     PriceModal,
     dateKey,
     formatDate,
-    formatMonth,
     getAmountPaid,
     getBalance,
     getBranchGroupName,
@@ -21,6 +20,25 @@ import {
     normalizeBooking,
     peso,
 } from "./_shared";
+
+function formatCurrentDateTime(value: Date) {
+    const dateLabel = value.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+    });
+
+    const timeLabel = value
+        .toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+        })
+        .toLowerCase();
+
+    return `${dateLabel} | ${timeLabel}`;
+}
+
 
 export default function ManagerBookings() {
     const [bookings, setBookings] = useState<Booking[]>([]);
@@ -32,6 +50,7 @@ export default function ManagerBookings() {
     const [calendarOpen, setCalendarOpen] = useState(false);
     const [priceModal, setPriceModal] = useState<Booking | null>(null);
     const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+    const [currentDateTime, setCurrentDateTime] = useState<Date | null>(null);
 
     function getToken() {
         return sessionStorage.getItem("token");
@@ -164,6 +183,18 @@ export default function ManagerBookings() {
 
     useEffect(() => {
         void loadBookings();
+    }, []);
+
+
+    useEffect(() => {
+        const updateDateTime = () => setCurrentDateTime(new Date());
+
+        updateDateTime();
+        const timer = window.setInterval(updateDateTime, 30_000);
+
+        return () => {
+            window.clearInterval(timer);
+        };
     }, []);
 
     async function updateStatus(id: number, newStatus: string, price?: number) {
@@ -495,55 +526,45 @@ export default function ManagerBookings() {
 
     return (
         <>
-            <div className="sticky top-0 z-20 border-b border-[#E9E0EF] bg-[#FFFDF8]/95 backdrop-blur">
-                <div className="flex items-center justify-between px-6 py-3">
-                    <div className="flex flex-wrap items-center gap-3">
+            <header className="sticky top-0 z-20 border-b border-[#E9E0EF] bg-[#FFFDF8]/95 font-sans backdrop-blur">
+                <div className="flex min-h-[72px] flex-wrap items-center justify-between gap-4 px-6 py-3">
+                    <div className="flex min-w-0 flex-wrap items-center gap-3">
                         <h1 className="text-[25px] font-bold text-[#1A1220]">
                             Bookings
                         </h1>
 
-                        <span className="rounded-lg bg-[#EFE8F8] px-3.5 py-1.5 text-sm font-medium text-[#4E2C66]">
+                        <span
+                            title={branchName}
+                            className="max-w-[220px] truncate rounded-lg bg-[#EFE8F8] px-3.5 py-1.5 text-sm font-medium text-[#4E2C66]"
+                        >
                             {branchName}
                         </span>
                     </div>
 
                     <div className="flex items-center gap-2.5">
-                        <div className="relative">
-                            <button
-                                onClick={() => setCalendarOpen((value) => !value)}
-                                className="inline-flex items-center gap-2 rounded-xl border border-[#E6DDF0] bg-white px-3.5 py-2.5 text-sm font-semibold text-[#2B174C] shadow-sm hover:bg-[#F7F1FF]"
-                                type="button"
-                            >
-                                <CalendarDays size={14} />
-                                {formatMonth(calendarMonth)}
-                                <ChevronDown size={13} />
-                            </button>
-
-                            {calendarOpen && (
-                                <CalendarDropdown
-                                    month={calendarMonth}
-                                    bookingDateCounts={bookingDateCounts}
-                                    selectedDate={selectedDate}
-                                    onChangeMonth={setCalendarMonth}
-                                    onSelectDate={(key) => {
-                                        setSelectedDate(key);
-                                        setCalendarOpen(false);
-                                    }}
-                                />
-                            )}
-                        </div>
+                        <span className="inline-flex h-[42px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3.5 text-sm font-semibold text-[#2B174C] shadow-sm">
+                            {currentDateTime
+                                ? formatCurrentDateTime(currentDateTime)
+                                : "Loading date..."}
+                        </span>
 
                         <button
                             onClick={() => void loadBookings()}
-                            className="inline-flex items-center gap-2 rounded-xl bg-[#2B174C] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1B0D31]"
+                            disabled={loading}
+                            aria-label="Refresh bookings"
+                            title="Refresh bookings"
+                            className="inline-flex h-[42px] items-center gap-2 rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-60"
                             type="button"
                         >
-                            <RefreshCw size={14} />
-                            Refresh bookings
+                            <RefreshCw
+                                size={16}
+                                className={loading ? "animate-spin" : ""}
+                            />
+                            Refresh
                         </button>
                     </div>
                 </div>
-            </div>
+            </header>
 
             <section className="px-6 py-4">
                 <div className="mb-3 grid gap-3 lg:grid-cols-3">
@@ -565,7 +586,7 @@ export default function ManagerBookings() {
                     />
                 </div>
 
-                <div className="mb-3">
+                <div className="mb-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="relative">
                         <Search
                             size={15}
@@ -576,8 +597,34 @@ export default function ManagerBookings() {
                             value={search}
                             onChange={(event) => setSearch(event.target.value)}
                             placeholder="Search bookings, package, client..."
-                            className="w-full rounded-xl border border-[#E3D8EA] bg-white px-4 py-2.5 pl-10 text-sm text-[#1A1220] outline-none shadow-sm placeholder:text-[#9B8AAA] focus:border-[#2B174C]"
+                            className="h-[42px] w-full rounded-xl border border-[#E3D8EA] bg-white px-4 pl-10 text-sm text-[#1A1220] outline-none shadow-sm placeholder:text-[#9B8AAA] transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10"
                         />
+                    </div>
+
+                    <div className="relative">
+                        <button
+                            onClick={() => setCalendarOpen((value) => !value)}
+                            className="inline-flex h-[42px] w-full items-center justify-center gap-2 rounded-xl border border-[#E6DDF0] bg-white px-3.5 text-sm font-semibold text-[#2B174C] shadow-sm transition hover:bg-[#F7F1FF] lg:w-auto"
+                            type="button"
+                        >
+                            <CalendarDays size={15} />
+                            {selectedDate
+                                ? formatDate(selectedDate)
+                                : "Filter by date"}
+                        </button>
+
+                        {calendarOpen && (
+                            <CalendarDropdown
+                                month={calendarMonth}
+                                bookingDateCounts={bookingDateCounts}
+                                selectedDate={selectedDate}
+                                onChangeMonth={setCalendarMonth}
+                                onSelectDate={(key) => {
+                                    setSelectedDate(key);
+                                    setCalendarOpen(false);
+                                }}
+                            />
+                        )}
                     </div>
                 </div>
 

@@ -1,6 +1,6 @@
 import RoleSidebar from "@/components/sidebar/RoleSidebar";
-import { CalendarDays, ChevronDown, RefreshCw } from "lucide-react";
-import type { ReactNode } from "react";
+import { RefreshCw } from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
 
 export type CartMap = { [key: string]: number };
 
@@ -372,11 +372,28 @@ export function StatCard({
     );
 }
 
+function formatCurrentDateTime(value: Date) {
+    const dateLabel = value.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+    });
+
+    const timeLabel = value
+        .toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+        })
+        .toLowerCase();
+
+    return `${dateLabel} | ${timeLabel}`;
+}
+
 export function POSLayout({
                               role,
                               isOwner,
                               activeBranchName,
-                              currentMonth,
                               onRefresh,
                               children,
                           }: {
@@ -387,6 +404,19 @@ export function POSLayout({
     onRefresh: () => void | Promise<void>;
     children: ReactNode;
 }) {
+    const [currentDateTime, setCurrentDateTime] = useState<Date | null>(null);
+
+    useEffect(() => {
+        const updateDateTime = () => setCurrentDateTime(new Date());
+
+        updateDateTime();
+        const timer = window.setInterval(updateDateTime, 30_000);
+
+        return () => {
+            window.clearInterval(timer);
+        };
+    }, []);
+
     return (
         <div
             className="flex min-h-screen font-sans text-[#1A1220]"
@@ -410,23 +440,20 @@ export function POSLayout({
                         </div>
 
                         <div className="flex items-center gap-2.5">
-                            <button
-                                type="button"
-                                className="inline-flex items-center gap-2 rounded-xl border border-[#E6DDF0] bg-white px-3.5 py-2.5 text-sm font-semibold text-[#2B174C] shadow-sm hover:bg-[#F7F1FF]"
-                            >
-                                <CalendarDays size={14} />
-                                {currentMonth}
-                                <ChevronDown size={13} />
-                            </button>
+                            <span className="inline-flex h-[42px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3.5 text-sm font-semibold text-[#2B174C] shadow-sm">
+                                {currentDateTime
+                                    ? formatCurrentDateTime(currentDateTime)
+                                    : "Loading date..."}
+                            </span>
 
                             <button
                                 onClick={() => void onRefresh()}
-                                className="inline-flex items-center gap-2 rounded-xl bg-[#2B174C] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1B0D31]"
-                                title="Refresh sales"
+                                className="inline-flex h-[42px] items-center gap-2 rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31]"
+                                title="Refresh"
                                 type="button"
                             >
-                                <RefreshCw size={14} />
-                                Refresh sales
+                                <RefreshCw size={16} />
+                                Refresh
                             </button>
                         </div>
                     </div>

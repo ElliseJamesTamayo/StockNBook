@@ -104,20 +104,20 @@ type CalendarDropdownProps = {
 };
 
 const STATUS_STYLE: Record<string, string> = {
-    "Pending Review": "bg-orange-50 text-orange-700 border-orange-200",
-    "Awaiting Down Payment": "bg-amber-50 text-amber-700 border-amber-200",
-    Confirmed: "bg-green-50 text-green-700 border-green-200",
-    Preparing: "bg-blue-50 text-blue-700 border-blue-200",
-    Completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    Cancelled: "bg-red-50 text-red-700 border-red-200",
+    "Pending Review": "border-[#F4D79A] bg-[#FFF8E8] text-[#A56607]",
+    "Awaiting Down Payment": "border-[#F4D79A] bg-[#FFF8E8] text-[#A56607]",
+    Confirmed: "border-[#C9D9FB] bg-[#EEF4FF] text-[#1D4ED8]",
+    Preparing: "border-[#D8CBE7] bg-[#F7F1FF] text-[#4E2C66]",
+    Completed: "border-[#B7E9C8] bg-[#EDFBF1] text-[#138342]",
+    Cancelled: "border-[#F2C4C4] bg-[#FFF0F0] text-[#C32F2F]",
 };
 
 const PAYMENT_STYLE: Record<string, string> = {
-    Unpaid: "bg-red-50 text-red-700 border-red-200",
-    "Down Payment Required": "bg-orange-50 text-orange-700 border-orange-200",
-    "Down Payment Paid": "bg-blue-50 text-blue-700 border-blue-200",
-    Partial: "bg-purple-50 text-purple-700 border-purple-200",
-    "Fully Paid": "bg-green-50 text-green-700 border-green-200",
+    Unpaid: "border-[#F2C4C4] bg-[#FFF0F0] text-[#C32F2F]",
+    "Down Payment Required": "border-[#F4D79A] bg-[#FFF8E8] text-[#A56607]",
+    "Down Payment Paid": "border-[#C9D9FB] bg-[#EEF4FF] text-[#1D4ED8]",
+    Partial: "border-[#D8CBE7] bg-[#F7F1FF] text-[#4E2C66]",
+    "Fully Paid": "border-[#B7E9C8] bg-[#EDFBF1] text-[#138342]",
 };
 
 function rawValue(raw: Record<string, unknown>, key: string) {
@@ -419,16 +419,16 @@ export function MetricCard({
     subValue?: string;
 }) {
     return (
-        <div className="rounded-[14px] border border-[#E6DDF0] bg-white p-3 shadow-sm">
-            <p className="text-xs font-semibold text-[#2B174C]">{title}</p>
+        <div className="min-h-[102px] rounded-[14px] border border-[#E6DDF0] bg-white px-4 py-3 shadow-sm">
+            <p className="text-sm font-semibold text-[#2B174C]">{title}</p>
 
-            <p className="mt-1 truncate text-[19px] font-bold leading-tight text-[#1A1220]">
+            <p className="mt-1 truncate text-[24px] font-bold leading-tight text-[#1A1220]">
                 {value}
             </p>
 
             {subLabel && subValue && (
                 <div className="mt-2 flex items-center justify-between gap-3 border-t border-[#EFE7F4] pt-2 text-xs">
-                    <span className="text-[#5F4E75]">{subLabel}</span>
+                    <span className="text-[#7A6A84]">{subLabel}</span>
                     <span className="font-semibold text-[#1A1220]">
                         {subValue}
                     </span>
@@ -465,7 +465,7 @@ export function CalendarDropdown({
     }, [month]);
 
     return (
-        <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[320px] rounded-[18px] border border-[#E6DDF0] bg-white p-4 shadow-xl">
+        <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[320px] rounded-[18px] border border-[#E6DDF0] bg-white p-4 font-sans shadow-xl">
             <div className="mb-3 flex items-center justify-between">
                 <button
                     onClick={() =>
@@ -473,7 +473,7 @@ export function CalendarDropdown({
                             new Date(month.getFullYear(), month.getMonth() - 1, 1)
                         )
                     }
-                    className="rounded-lg p-2 text-[#2B174C] hover:bg-[#F7F1FF]"
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-[#2B174C] transition hover:bg-[#F7F1FF]"
                     type="button"
                 >
                     <ChevronLeft size={16} />
@@ -489,14 +489,14 @@ export function CalendarDropdown({
                             new Date(month.getFullYear(), month.getMonth() + 1, 1)
                         )
                     }
-                    className="rounded-lg p-2 text-[#2B174C] hover:bg-[#F7F1FF]"
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-[#2B174C] transition hover:bg-[#F7F1FF]"
                     type="button"
                 >
                     <ChevronRight size={16} />
                 </button>
             </div>
 
-            <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold text-[#806A8C]">
+            <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-[#806A8C]">
                 {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => (
                     <div key={day} className="py-1">
                         {day}
@@ -603,13 +603,13 @@ export function PriceModal({
     }
 
     return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4">
-            <div className="w-full max-w-md rounded-[22px] border border-[#E6DDF0] bg-[#FFFDF8] p-5 shadow-2xl">
-                <h3 className="text-lg font-bold text-[#1A1220]">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
+            <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-[18px] border border-[#E6DDF0] bg-white p-5 font-sans shadow-2xl">
+                <h3 className="text-[20px] font-bold text-[#1A1220]">
                     Set Custom Payment Terms
                 </h3>
 
-                <p className="mt-1 text-xs leading-relaxed text-[#7A6A84]">
+                <p className="mt-1 text-sm leading-6 text-[#7A6A84]">
                     Enter the agreed price and required down payment for{" "}
                     <span className="font-semibold text-[#1A1220]">
                         {booking.name}
@@ -619,7 +619,7 @@ export function PriceModal({
 
                 <div className="mt-4 space-y-3">
                     <div>
-                        <label className="mb-2 block text-xs font-semibold text-[#5A476A]">
+                        <label className="mb-2 block text-sm font-medium text-[#1A1220]">
                             Agreed Price (₱)
                         </label>
 
@@ -639,13 +639,13 @@ export function PriceModal({
                                     setError("");
                                 }}
                                 placeholder="0.00"
-                                className="w-full rounded-xl border border-[#E6DDF0] bg-white py-3 pl-10 pr-4 text-sm outline-none focus:border-[#2B174C]"
+                                className="h-[42px] w-full rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-3 pl-10 text-sm text-[#1A1220] outline-none transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10"
                             />
                         </div>
                     </div>
 
                     <div>
-                        <label className="mb-2 block text-xs font-semibold text-[#5A476A]">
+                        <label className="mb-2 block text-sm font-medium text-[#1A1220]">
                             Required Down Payment (₱)
                         </label>
 
@@ -665,17 +665,17 @@ export function PriceModal({
                                     setError("");
                                 }}
                                 placeholder="0.00"
-                                className="w-full rounded-xl border border-[#E6DDF0] bg-white py-3 pl-10 pr-4 text-sm outline-none focus:border-[#2B174C]"
+                                className="h-[42px] w-full rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-3 pl-10 text-sm text-[#1A1220] outline-none transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10"
                             />
                         </div>
                     </div>
 
                     {error && (
-                        <p className="text-xs font-medium text-red-500">{error}</p>
+                        <p className="rounded-xl border border-[#F2C4C4] bg-[#FFF0F0] px-3 py-2 text-xs font-medium text-[#C32F2F]">{error}</p>
                     )}
                 </div>
 
-                <div className="mt-4 rounded-xl bg-[#F8F2EA] p-3 text-xs text-[#6A5D6F]">
+                <div className="mt-4 rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] p-3 text-sm text-[#7A6A84]">
                     <p className="font-semibold text-[#1A1220]">
                         Custom Request:
                     </p>
@@ -686,7 +686,7 @@ export function PriceModal({
                     <button
                         type="button"
                         onClick={onClose}
-                        className="flex-1 rounded-xl border border-[#D9D0E5] bg-white px-4 py-3 text-sm font-semibold text-[#2B174C] hover:bg-[#F7F1FF]"
+                        className="flex-1 rounded-xl border border-[#E6DDF0] bg-white px-4 py-2.5 text-sm font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF]"
                     >
                         Cancel
                     </button>
@@ -694,7 +694,7 @@ export function PriceModal({
                     <button
                         type="button"
                         onClick={handleConfirm}
-                        className="flex-1 rounded-xl bg-[#2B174C] px-4 py-3 text-sm font-semibold text-white hover:bg-[#1B0D31]"
+                        className="flex-1 rounded-xl bg-[#2B174C] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31]"
                     >
                         Save Terms
                     </button>
@@ -806,7 +806,7 @@ export function BookingRow({
                     open ? "bg-[#F9F4FF]" : "bg-white"
                 }`}
             >
-                <td className="px-3 py-3">
+                <td className="px-4 py-3">
                     <div className="flex items-start gap-2.5">
                         <ChevronDown
                             size={14}
@@ -827,13 +827,13 @@ export function BookingRow({
                             )}
 
                             {b.bookingReference && (
-                                <p className="mt-0.5 text-[11px] font-semibold text-[#8A7A91]">
+                                <p className="mt-0.5 text-xs font-semibold text-[#806A8C]">
                                     {b.bookingReference}
                                 </p>
                             )}
 
                             {ownerView && (
-                                <p className="mt-0.5 text-[11px] text-[#8A7A91]">
+                                <p className="mt-0.5 text-xs text-[#806A8C]">
                                     {getBranchGroupName(b)}
                                 </p>
                             )}
@@ -841,7 +841,7 @@ export function BookingRow({
                     </div>
                 </td>
 
-                <td className="px-3 py-3">
+                <td className="px-4 py-3">
                     <p className="text-sm font-semibold text-[#1A1220]">
                         {formatDate(b.date)}
                     </p>
@@ -853,7 +853,7 @@ export function BookingRow({
                     )}
                 </td>
 
-                <td className="px-3 py-3">
+                <td className="px-4 py-3">
                     <div className="flex max-w-[210px] items-start gap-2">
                         <Package size={14} className="mt-0.5 shrink-0 text-[#6C3AD6]" />
 
@@ -871,7 +871,7 @@ export function BookingRow({
                             </p>
 
                             {b.theme && (
-                                <p className="mt-0.5 truncate text-[11px] text-[#8A7A91]">
+                                <p className="mt-0.5 truncate text-xs text-[#806A8C]">
                                     {b.theme}
                                 </p>
                             )}
@@ -879,27 +879,27 @@ export function BookingRow({
                     </div>
                 </td>
 
-                <td className="px-3 py-3">
+                <td className="px-4 py-3">
                     <span
-                        className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${paymentClass}`}
+                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${paymentClass}`}
                     >
                         {paymentStatus}
                     </span>
 
-                    <p className="mt-1 text-[11px] text-[#7A6A84]">
+                    <p className="mt-1 text-xs text-[#7A6A84]">
                         Paid {peso(paid)}
                     </p>
                 </td>
 
-                <td className="px-3 py-3">
+                <td className="px-4 py-3">
                     <span
-                        className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusClass}`}
+                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass}`}
                     >
                         {displayStatus}
                     </span>
                 </td>
 
-                <td className="px-3 py-3 text-right">
+                <td className="px-4 py-3 text-right">
                     {b.venue ? (
                         <div className="inline-flex max-w-[180px] items-center justify-end gap-1.5 text-xs font-medium text-[#5F4E75]">
                             <MapPin size={13} />
@@ -918,23 +918,23 @@ export function BookingRow({
 
             {open && (
                 <tr className="border-b border-[#EFE7F4] bg-[#F9F4FF]">
-                    <td colSpan={6} className="px-3 pb-4">
-                        <div className="flex w-full gap-4 rounded-[18px] border border-[#E6DDF0] bg-white p-4">
+                    <td colSpan={6} className="px-4 pb-4">
+                        <div className="flex w-full flex-col gap-4 rounded-[14px] border border-[#E6DDF0] bg-white p-4 xl:flex-row">
                             {/* LEFT SIDE */}
                             <div className="min-w-0 flex-1 space-y-4">
-                                <div className="rounded-[15px] border border-[#E6DDF0] bg-white p-4">
+                                <div className="rounded-[14px] border border-[#E6DDF0] bg-[#FFFDF8] p-4">
                                     <div className="mb-4 flex items-center gap-2">
                                         <CreditCard
                                             size={15}
                                             className="text-[#6C3AD6]"
                                         />
 
-                                        <p className="text-sm font-bold text-[#2B174C]">
+                                        <p className="text-[16px] font-bold text-[#1A1220]">
                                             Payment Summary
                                         </p>
                                     </div>
 
-                                    <div className="space-y-4 text-sm">
+                                    <div className="space-y-3 text-sm">
                                         <SummaryLine
                                             label={isCustom ? "Agreed Price" : "Package Price"}
                                             value={total > 0 ? peso(total) : "Not set"}
@@ -972,19 +972,19 @@ export function BookingRow({
                                     )}
                                 </div>
 
-                                <div className="min-h-[96px] rounded-[15px] border border-[#E6DDF0] bg-white p-4">
+                                <div className="min-h-[96px] rounded-[14px] border border-[#E6DDF0] bg-[#FFFDF8] p-4">
                                     <div className="mb-2 flex items-center gap-2">
                                         <StickyNote
                                             size={14}
                                             className="text-[#806A8C]"
                                         />
 
-                                        <p className="text-sm font-bold text-[#2B174C]">
+                                        <p className="text-[16px] font-bold text-[#1A1220]">
                                             Notes
                                         </p>
                                     </div>
 
-                                    <p className="text-sm leading-relaxed text-[#6F5F7A]">
+                                    <p className="text-sm leading-6 text-[#7A6A84]">
                                         {b.notes || "No notes provided."}
                                     </p>
                                 </div>
@@ -992,13 +992,13 @@ export function BookingRow({
 
                             {/* RIGHT SIDE */}
                             <div className="min-w-0 flex-1 space-y-4">
-                                <div className="rounded-[15px] border border-[#E6DDF0] bg-white p-4">
-                                    <p className="mb-3 text-sm font-bold text-[#2B174C]">
+                                <div className="rounded-[14px] border border-[#E6DDF0] bg-[#FFFDF8] p-4">
+                                    <p className="mb-3 text-[16px] font-bold text-[#1A1220]">
                                         Payment Action
                                     </p>
 
                                     {ownerView || !canManage ? (
-                                        <div className="rounded-lg bg-[#FFFCF7] px-3 py-3 text-center text-xs font-semibold text-[#7A6A84]">
+                                        <div className="rounded-xl border border-[#E6DDF0] bg-white px-3 py-3 text-center text-xs font-semibold text-[#7A6A84]">
                                             View-only booking record.
                                         </div>
                                     ) : isCustom && customNeedsTerms ? (
@@ -1008,48 +1008,19 @@ export function BookingRow({
                                                 onSetPrice?.(b);
                                             }}
                                             type="button"
-                                            style={{
-                                                width: "100%",
-                                                backgroundColor: "#3A176D",
-                                                color: "#FFFFFF",
-                                                padding: "12px 16px",
-                                                borderRadius: "10px",
-                                                fontWeight: 700,
-                                                fontSize: "14px",
-                                                border: "none",
-                                                display: "block",
-                                                cursor: "pointer",
-                                            }}
+                                            className="inline-flex h-[42px] w-full items-center justify-center rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31]"
                                         >
                                             Set Price & Down Payment
                                         </button>
                                     ) : total <= 0 || requiredDp <= 0 ? (
                                         <div
-                                            style={{
-                                                width: "100%",
-                                                backgroundColor: "#FFF7ED",
-                                                color: "#C2410C",
-                                                padding: "12px 16px",
-                                                borderRadius: "10px",
-                                                fontWeight: 700,
-                                                fontSize: "13px",
-                                                textAlign: "center",
-                                            }}
+                                            className="flex min-h-[42px] w-full items-center justify-center rounded-xl border border-[#F4D79A] bg-[#FFF8E8] px-4 text-center text-sm font-semibold text-[#A56607]"
                                         >
                                             Payment terms missing
                                         </div>
                                     ) : balance <= 0 ? (
                                         <div
-                                            style={{
-                                                width: "100%",
-                                                backgroundColor: "#EAF8EF",
-                                                color: "#047857",
-                                                padding: "12px 16px",
-                                                borderRadius: "10px",
-                                                fontWeight: 700,
-                                                fontSize: "14px",
-                                                textAlign: "center",
-                                            }}
+                                            className="flex min-h-[42px] w-full items-center justify-center rounded-xl border border-[#B7E9C8] bg-[#EDFBF1] px-4 text-center text-sm font-semibold text-[#138342]"
                                         >
                                             Payment completed
                                         </div>
@@ -1060,18 +1031,7 @@ export function BookingRow({
                                                 onRecordDownPayment?.(b);
                                             }}
                                             type="button"
-                                            style={{
-                                                width: "100%",
-                                                backgroundColor: "#3A176D",
-                                                color: "#FFFFFF",
-                                                padding: "12px 16px",
-                                                borderRadius: "10px",
-                                                fontWeight: 700,
-                                                fontSize: "14px",
-                                                border: "none",
-                                                display: "block",
-                                                cursor: "pointer",
-                                            }}
+                                            className="inline-flex h-[42px] w-full items-center justify-center rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31]"
                                         >
                                             Mark Down Payment Paid
                                         </button>
@@ -1082,18 +1042,7 @@ export function BookingRow({
                                                 onMarkFullyPaid?.(b);
                                             }}
                                             type="button"
-                                            style={{
-                                                width: "100%",
-                                                backgroundColor: "#3A176D",
-                                                color: "#FFFFFF",
-                                                padding: "12px 16px",
-                                                borderRadius: "10px",
-                                                fontWeight: 700,
-                                                fontSize: "14px",
-                                                border: "none",
-                                                display: "block",
-                                                cursor: "pointer",
-                                            }}
+                                            className="inline-flex h-[42px] w-full items-center justify-center rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31]"
                                         >
                                             Mark as Fully Paid
                                         </button>
@@ -1106,31 +1055,19 @@ export function BookingRow({
                                                 onSetPrice?.(b);
                                             }}
                                             type="button"
-                                            style={{
-                                                width: "100%",
-                                                marginTop: "12px",
-                                                backgroundColor: "#FFFFFF",
-                                                color: "#3A176D",
-                                                padding: "10px 16px",
-                                                borderRadius: "10px",
-                                                fontWeight: 700,
-                                                fontSize: "14px",
-                                                border: "1px solid #BFA7E4",
-                                                display: "block",
-                                                cursor: "pointer",
-                                            }}
+                                            className="mt-3 inline-flex h-[42px] w-full items-center justify-center rounded-xl border border-[#E6DDF0] bg-white px-4 text-sm font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF]"
                                         >
                                             Edit Custom Price & DP
                                         </button>
                                     )}
                                 </div>
 
-                                <div className="rounded-[15px] border border-[#E6DDF0] bg-white p-4">
-                                    <p className="mb-4 text-sm font-bold text-[#2B174C]">
+                                <div className="rounded-[14px] border border-[#E6DDF0] bg-[#FFFDF8] p-4">
+                                    <p className="mb-4 text-[16px] font-bold text-[#1A1220]">
                                         Booking Status
                                     </p>
 
-                                    <div className="space-y-4 text-sm">
+                                    <div className="space-y-3 text-sm">
                                         <SummaryLine
                                             label="Current Status"
                                             value={displayStatus}
@@ -1144,7 +1081,7 @@ export function BookingRow({
                                     </div>
 
                                     {ownerView || !canManage ? (
-                                        <div className="rounded-lg bg-[#FFFCF7] px-3 py-3 text-center text-xs font-semibold text-[#7A6A84]">
+                                        <div className="rounded-xl border border-[#E6DDF0] bg-white px-3 py-3 text-center text-xs font-semibold text-[#7A6A84]">
                                             View-only booking record.
                                         </div>
                                     ) : (
@@ -1153,19 +1090,7 @@ export function BookingRow({
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); if (!statusActionDisabled) onUpdateStatus?.(b.id, nextStatus); }}
                                                 disabled={statusActionDisabled}
-                                                style={{
-                                                    width: "100%",
-                                                    marginBottom: "8px",
-                                                    backgroundColor: statusActionDisabled ? "#E8DFF1" : "#3A176D",
-                                                    color: "#FFFFFF",
-                                                    padding: "12px 16px",
-                                                    borderRadius: "10px",
-                                                    fontWeight: 700,
-                                                    fontSize: "14px",
-                                                    border: "none",
-                                                    display: "block",
-                                                    cursor: statusActionDisabled ? "not-allowed" : "pointer",
-                                                }}
+                                                className="mb-2 inline-flex h-[42px] w-full items-center justify-center rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:bg-[#D8CBE7] disabled:text-[#806A8C]"
                                             >
                                                 {nextStatusLabel}
                                             </button>
@@ -1178,23 +1103,7 @@ export function BookingRow({
                                                         e.stopPropagation();
                                                         onUpdateStatus?.(b.id, "Cancelled");
                                                     }}
-                                                    style={{
-                                                        width: "100%",
-                                                        marginTop: "12px",
-                                                        backgroundColor: "#DC2626",
-                                                        color: "#FFFFFF",
-                                                        padding: "12px 16px",
-                                                        borderRadius: "10px",
-                                                        fontWeight: 700,
-                                                        fontSize: "14px",
-                                                        border: "none",
-                                                        display: "block",
-                                                        cursor: "pointer",
-                                                        opacity: 1,
-                                                        visibility: "visible",
-                                                        position: "relative",
-                                                        zIndex: 20,
-                                                    }}
+                                                    className="mt-3 inline-flex h-[42px] w-full items-center justify-center rounded-xl bg-[#A33E20] px-4 text-sm font-semibold text-white transition hover:bg-[#883117]"
                                                 >
                                                     Cancel Booking
                                                 </button>
@@ -1202,7 +1111,7 @@ export function BookingRow({
                                         </>
                                     )}
 
-                                    <p className="mt-3 text-center text-xs font-medium text-[#9B8AAA]">
+                                    <p className="mt-3 text-center text-xs text-[#7A6A84]">
                                         {statusHelper}
                                     </p>
                                 </div>
@@ -1228,11 +1137,11 @@ function SummaryLine({
 }) {
     return (
         <div className="flex items-center justify-between gap-4">
-            <span className="text-sm text-[#6F5F7A]">{label}</span>
+            <span className="text-sm text-[#7A6A84]">{label}</span>
 
             {badgeClass ? (
                 <span
-                    className={`inline-flex rounded-md border px-2.5 py-1 text-[11px] font-bold ${badgeClass}`}
+                    className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${badgeClass}`}
                 >
                     {value}
                 </span>
@@ -1240,7 +1149,7 @@ function SummaryLine({
                 <span
                     className={`text-right ${
                         strong
-                            ? "text-base font-bold text-[#3A176D]"
+                            ? "text-[18px] font-bold text-[#2B174C]"
                             : "text-sm font-semibold text-[#1A1220]"
                     }`}
                 >

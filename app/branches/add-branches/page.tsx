@@ -1,9 +1,19 @@
 "use client";
 
 import RoleSidebar from "@/components/sidebar/RoleSidebar";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, Package } from "lucide-react";
+import {
+    ArrowLeft,
+    Building2,
+    Check,
+    Copy,
+    Mail,
+    MapPin,
+    Phone,
+    ShieldCheck,
+    UserRound,
+} from "lucide-react";
 
 const defaultPermissions = {
     dashboard: true,
@@ -36,22 +46,23 @@ export default function AddBranchPage() {
     const [permissions, setPermissions] = useState(defaultPermissions);
     const [loading, setLoading] = useState(false);
     const [inviteLinks, setInviteLinks] = useState<InviteLink[]>([]);
+    const [copiedLink, setCopiedLink] = useState("");
 
     const updatePermission = (permission: PermissionKey, value: boolean) => {
-        setPermissions((prev) => ({
-            ...prev,
+        setPermissions((previous) => ({
+            ...previous,
             [permission]: value,
         }));
     };
 
     const handleSave = async () => {
-        if (!branchName) {
-            alert("Please enter branch name.");
+        if (!branchName.trim()) {
+            alert("Please enter the branch name.");
             return;
         }
 
-        if (!managerName || !managerEmail) {
-            alert("Please enter manager name and email.");
+        if (!managerName.trim() || !managerEmail.trim()) {
+            alert("Please enter the manager name and email.");
             return;
         }
 
@@ -74,11 +85,11 @@ export default function AddBranchPage() {
                 body: JSON.stringify({
                     branches: [
                         {
-                            branch_name: branchName,
-                            contact_number: contactNumber,
-                            address,
-                            manager_name: managerName,
-                            manager_email: managerEmail,
+                            branch_name: branchName.trim(),
+                            contact_number: contactNumber.trim(),
+                            address: address.trim(),
+                            manager_name: managerName.trim(),
+                            manager_email: managerEmail.trim(),
                             permissions,
                         },
                     ],
@@ -88,246 +99,336 @@ export default function AddBranchPage() {
             const data = await res.json();
 
             if (!res.ok) {
-                alert(data.error || JSON.stringify(data));
+                alert(data.error || "Unable to create the branch.");
                 return;
             }
 
             setInviteLinks(data.invite_links || []);
             alert("Branch and manager invitation created!");
-        } catch (error) {
-            alert("Something went wrong while adding branch.");
+        } catch {
+            alert("Something went wrong while adding the branch.");
         } finally {
             setLoading(false);
         }
     };
 
+    const handleCopy = async (link: string) => {
+        try {
+            await navigator.clipboard.writeText(link);
+            setCopiedLink(link);
+            window.setTimeout(() => setCopiedLink(""), 1800);
+        } catch {
+            alert("Unable to copy the invitation link.");
+        }
+    };
+
     return (
-        <div
-            style={{
-                backgroundColor: "#FDFAF4",
-                fontFamily: "Georgia, 'Times New Roman', serif",
-            }}
-            className="flex min-h-screen text-[#1A1220]"
-        >
+        <div className="flex min-h-screen bg-[#FDFAF4] font-sans text-[#1A1220]">
             <RoleSidebar />
 
-            <main className="flex-1 overflow-y-auto">
-                <div className="flex h-[64px] items-center justify-between border-b border-[#EBE4F0] bg-white px-[18px]">
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-[22px] font-medium text-[#1A1220]">
-                            Add Branch
-                        </h1>
+            <main className="min-w-0 flex-1 overflow-y-auto">
+                <header className="sticky top-0 z-20 border-b border-[#E9E0EF] bg-[#FFFDF8]/95 backdrop-blur">
+                    <div className="flex min-h-[72px] flex-wrap items-center justify-between gap-3 px-6 py-3">
+                        <div className="flex items-center gap-3">
+                            <h1 className="text-[25px] font-bold tracking-[-0.02em] text-[#1A1220]">
+                                Add Branch
+                            </h1>
 
-                        <span className="rounded-[6px] bg-[#FFFBF0] px-3 py-1 text-[11px] font-medium text-[#633806]">
-                            Owner setup
-                        </span>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => router.push("/branches")}
+                            className="inline-flex h-[42px] items-center gap-2 rounded-xl border border-[#E6DDF0] bg-white px-4 text-sm font-semibold text-[#2B174C] shadow-sm transition hover:bg-[#F7F1FF]"
+                        >
+                            <ArrowLeft size={16} />
+                            Back to branches
+                        </button>
                     </div>
+                </header>
 
-                    <button
-                        onClick={() => router.push("/branches/add-branches")}
-                        className="rounded-[9px] border border-[#EBE4F0] bg-white px-5 py-2 text-[13px] font-medium text-[#2D1B4E] hover:bg-[#EEE8F8]"
-                    >
-                        Back to branches
-                    </button>
-                </div>
-
-                <section className="mx-auto max-w-3xl px-[18px] py-[22px]">
-                    <div className="rounded-[14px] border border-[#EBE4F0] bg-white p-7">
-                        <h2 className="text-[22px] font-medium text-[#1A1220]">
-                            Branch details
-                        </h2>
-
-                        <p className="mt-2 text-[14px] leading-6 text-[#7A6E88]">
-                            Add a new branch and invite the assigned branch manager.
-                        </p>
-
-                        <div className="mt-7 space-y-5">
-                            <TextInput
-                                label="Branch name"
-                                placeholder="e.g. Main Branch"
-                                value={branchName}
-                                onChange={setBranchName}
-                            />
-
-                            <TextInput
-                                label="Branch contact number"
-                                placeholder="09XX XXX XXXX"
-                                value={contactNumber}
-                                onChange={setContactNumber}
-                            />
-
-                            <TextInput
-                                label="Branch address"
-                                placeholder="Full address of this branch"
-                                value={address}
-                                onChange={setAddress}
-                            />
-                        </div>
-
-                        <div className="mt-8 border-t border-[#EBE4F0] pt-7">
-                            <h2 className="text-[22px] font-medium text-[#1A1220]">
-                                Branch manager
+                <section className="w-full px-6 py-6">
+                    <div>
+                        <div className="pb-5">
+                            <h2 className="text-[18px] font-bold text-[#1A1220]">
+                                Branch details
                             </h2>
-
-                            <p className="mt-2 text-[14px] leading-6 text-[#7A6E88]">
-                                This manager will receive an invite link and will handle this branch.
+                            <p className="mt-1 text-sm text-[#7A6A84]">
+                                Set up the branch, assign its manager, and choose the manager&apos;s access.
                             </p>
-
-                            <div className="mt-7 space-y-5">
-                                <TextInput
-                                    label="Manager name"
-                                    placeholder="e.g. Ana Cruz"
-                                    value={managerName}
-                                    onChange={setManagerName}
-                                    icon={<Package className="h-5 w-5 text-[#7A6E88]" />}
-                                />
-
-                                <TextInput
-                                    label="Manager email"
-                                    placeholder="manager@email.com"
-                                    type="email"
-                                    value={managerEmail}
-                                    onChange={setManagerEmail}
-                                    icon={<Mail className="h-5 w-5 text-[#7A6E88]" />}
-                                />
-                            </div>
                         </div>
 
-                        <div className="mt-8 border-t border-[#EBE4F0] pt-7">
-                            <p className="mb-4 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#7A6E88]">
-                                Manager feature access
-                            </p>
-
-                            <div className="grid gap-3 sm:grid-cols-2">
-                                <AccessToggle
-                                    label="Dashboard"
-                                    checked={permissions.dashboard}
-                                    onChange={(checked) => updatePermission("dashboard", checked)}
+                        <div className="space-y-5">
+                            <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm sm:p-6">
+                                <SectionHeading
+                                    icon={<Building2 size={17} />}
+                                    title="Branch information"
+                                    description="Add the basic details that identify this branch."
                                 />
 
-                                <AccessToggle
-                                    label="Bookings"
-                                    checked={permissions.bookings}
-                                    onChange={(checked) => updatePermission("bookings", checked)}
+                                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                    <TextInput
+                                        label="Branch name"
+                                        placeholder="e.g. Makati Branch"
+                                        value={branchName}
+                                        onChange={setBranchName}
+                                    />
+
+                                    <TextInput
+                                        label="Contact number"
+                                        placeholder="e.g. 0917 000 0000"
+                                        value={contactNumber}
+                                        onChange={setContactNumber}
+                                        icon={<Phone size={16} />}
+                                    />
+
+                                    <div className="md:col-span-2">
+                                        <TextInput
+                                            label="Branch address"
+                                            placeholder="Full address of this branch"
+                                            value={address}
+                                            onChange={setAddress}
+                                            icon={<MapPin size={16} />}
+                                        />
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm sm:p-6">
+                                <SectionHeading
+                                    icon={<UserRound size={17} />}
+                                    title="Branch manager"
+                                    description="The manager will receive an invitation link to activate their account."
                                 />
 
-                                <AccessToggle
-                                    label="Packages"
-                                    checked={permissions.packages}
-                                    onChange={(checked) => updatePermission("packages", checked)}
+                                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                    <TextInput
+                                        label="Manager name"
+                                        placeholder="e.g. Ana Cruz"
+                                        value={managerName}
+                                        onChange={setManagerName}
+                                        icon={<UserRound size={16} />}
+                                    />
+
+                                    <TextInput
+                                        label="Manager email"
+                                        placeholder="manager@email.com"
+                                        type="email"
+                                        value={managerEmail}
+                                        onChange={setManagerEmail}
+                                        icon={<Mail size={16} />}
+                                    />
+                                </div>
+                            </section>
+
+                            <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm sm:p-6">
+                                <SectionHeading
+                                    icon={<ShieldCheck size={17} />}
+                                    title="Manager feature access"
+                                    description="Choose the pages and features this manager can access."
                                 />
 
-                                <AccessToggle
-                                    label="Inventory"
-                                    checked={permissions.inventory}
-                                    onChange={(checked) => updatePermission("inventory", checked)}
-                                />
-
-                                <AccessToggle
-                                    label="Sales / POS"
-                                    checked={permissions.pos}
-                                    onChange={(checked) => updatePermission("pos", checked)}
-                                />
-
-                                <AccessToggle
-                                    label="Reports"
-                                    checked={permissions.reports}
-                                    onChange={(checked) => updatePermission("reports", checked)}
-                                />
-
-                                <AccessToggle
-                                    label="Staff Management"
-                                    checked={permissions.staff_management}
-                                    onChange={(checked) =>
-                                        updatePermission("staff_management", checked)
-                                    }
-                                />
-
-                                <AccessToggle
-                                    label="Branch Settings"
-                                    checked={permissions.branch_settings}
-                                    onChange={(checked) =>
-                                        updatePermission("branch_settings", checked)
-                                    }
-                                />
-                            </div>
+                                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                    <AccessToggle
+                                        label="Dashboard"
+                                        detail="View branch overview"
+                                        checked={permissions.dashboard}
+                                        onChange={(checked) =>
+                                            updatePermission("dashboard", checked)
+                                        }
+                                    />
+                                    <AccessToggle
+                                        label="Bookings"
+                                        detail="Manage reservations"
+                                        checked={permissions.bookings}
+                                        onChange={(checked) =>
+                                            updatePermission("bookings", checked)
+                                        }
+                                    />
+                                    <AccessToggle
+                                        label="Packages"
+                                        detail="View package offerings"
+                                        checked={permissions.packages}
+                                        onChange={(checked) =>
+                                            updatePermission("packages", checked)
+                                        }
+                                    />
+                                    <AccessToggle
+                                        label="Inventory"
+                                        detail="Track products and stock"
+                                        checked={permissions.inventory}
+                                        onChange={(checked) =>
+                                            updatePermission("inventory", checked)
+                                        }
+                                    />
+                                    <AccessToggle
+                                        label="Sales / POS"
+                                        detail="Create sales transactions"
+                                        checked={permissions.pos}
+                                        onChange={(checked) =>
+                                            updatePermission("pos", checked)
+                                        }
+                                    />
+                                    <AccessToggle
+                                        label="Reports"
+                                        detail="View branch reports"
+                                        checked={permissions.reports}
+                                        onChange={(checked) =>
+                                            updatePermission("reports", checked)
+                                        }
+                                    />
+                                    <AccessToggle
+                                        label="Staff Management"
+                                        detail="Manage assigned staff"
+                                        checked={permissions.staff_management}
+                                        onChange={(checked) =>
+                                            updatePermission(
+                                                "staff_management",
+                                                checked
+                                            )
+                                        }
+                                    />
+                                    <AccessToggle
+                                        label="Branch Settings"
+                                        detail="Update branch settings"
+                                        checked={permissions.branch_settings}
+                                        onChange={(checked) =>
+                                            updatePermission(
+                                                "branch_settings",
+                                                checked
+                                            )
+                                        }
+                                    />
+                                </div>
+                            </section>
                         </div>
 
-                        <div className="mt-8 flex gap-3">
+                        <div className="flex flex-col-reverse gap-3 border-t border-[#EEE7F2] pt-4 sm:flex-row sm:justify-end">
                             <button
+                                type="button"
                                 onClick={() => router.push("/branches")}
-                                className="w-full rounded-lg border border-[#EBE4F0] bg-white px-5 py-3 font-medium text-[#2D1B4E]"
+                                disabled={loading}
+                                className="h-[44px] rounded-xl border border-[#E6DDF0] bg-white px-5 text-sm font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                                 Cancel
                             </button>
 
                             <button
+                                type="button"
                                 onClick={handleSave}
                                 disabled={loading}
-                                className="w-full rounded-lg bg-[#2D1B4E] px-5 py-3 font-medium text-white disabled:opacity-60"
+                                className="h-[44px] rounded-xl bg-[#2B174C] px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                                {loading ? "Saving..." : "Add branch"}
+                                {loading ? "Creating branch..." : "Add branch"}
                             </button>
                         </div>
                     </div>
 
                     {inviteLinks.length > 0 && (
-                        <div className="mt-6 rounded-[14px] border border-[#EBE4F0] bg-white p-6">
-                            <h3 className="font-semibold text-[#2D1B4E]">
-                                Manager invitation link
-                            </h3>
+                        <section className="mt-5 overflow-hidden rounded-[16px] border border-[#E6DDF0] bg-white shadow-sm">
+                            <div className="border-b border-[#EEE7F2] px-6 py-5 sm:px-7">
+                                <h2 className="text-[18px] font-bold text-[#1A1220]">
+                                    Manager invitation link
+                                </h2>
+                                <p className="mt-1 text-sm text-[#7A6A84]">
+                                    Send this link to the manager so they can activate their account.
+                                </p>
+                            </div>
 
-                            <p className="mt-2 text-[14px] text-[#7A6E88]">
-                                Copy this link and use it to activate the manager account.
-                            </p>
-
-                            <div className="mt-5 space-y-4">
+                            <div className="space-y-3 px-6 py-5 sm:px-7">
                                 {inviteLinks.map((invite, index) => (
-                                    <div
-                                        key={index}
-                                        className="rounded-xl border border-[#EBE4F0] bg-[#FDFAF4] p-4"
+                                    <article
+                                        key={`${invite.manager_email}-${index}`}
+                                        className="rounded-xl border border-[#E6DDF0] bg-[#FFFCF7] p-4"
                                     >
-                                        <p className="text-sm font-semibold text-[#1A1220]">
-                                            {invite.manager_name || "Manager"} — {invite.branch_name}
-                                        </p>
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div>
+                                                <h3 className="text-sm font-bold text-[#1A1220]">
+                                                    {invite.manager_name || "Manager"}{" "}
+                                                    <span className="font-medium text-[#806A8C]">
+                                                        · {invite.branch_name}
+                                                    </span>
+                                                </h3>
+                                                <p className="mt-1 text-xs text-[#7A6A84]">
+                                                    {invite.manager_email}
+                                                </p>
+                                            </div>
 
-                                        <p className="mt-1 text-xs text-[#7A6E88]">
-                                            {invite.manager_email}
-                                        </p>
+                                            <span className="rounded-full bg-[#EAF8EF] px-2.5 py-1 text-xs font-semibold text-[#168446]">
+                                                Ready to send
+                                            </span>
+                                        </div>
 
-                                        <div className="mt-3 flex gap-2">
+                                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                                             <input
                                                 readOnly
                                                 value={invite.invite_link}
-                                                className="w-full rounded-lg border border-[#EBE4F0] px-3 py-2 text-xs text-[#7A6E88]"
+                                                aria-label="Manager invitation link"
+                                                className="h-[40px] min-w-0 flex-1 rounded-xl border border-[#E6DDF0] bg-white px-3 text-xs text-[#7A6A84] outline-none"
                                             />
 
                                             <button
                                                 type="button"
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText(invite.invite_link);
-                                                    alert("Invite link copied!");
-                                                }}
-                                                className="rounded-lg bg-[#2D1B4E] px-4 py-2 text-xs font-medium text-white"
+                                                onClick={() =>
+                                                    void handleCopy(
+                                                        invite.invite_link
+                                                    )
+                                                }
+                                                className="inline-flex h-[40px] shrink-0 items-center justify-center gap-2 rounded-xl bg-[#2B174C] px-4 text-xs font-semibold text-white transition hover:bg-[#1B0D31]"
                                             >
-                                                Copy
+                                                {copiedLink === invite.invite_link ? (
+                                                    <>
+                                                        <Check size={14} />
+                                                        Copied
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Copy size={14} />
+                                                        Copy link
+                                                    </>
+                                                )}
                                             </button>
                                         </div>
-                                    </div>
+                                    </article>
                                 ))}
                             </div>
 
-                            <button
-                                type="button"
-                                onClick={() => router.push("/branches")}
-                                className="mt-6 w-full rounded-lg bg-[#2D1B4E] px-5 py-3 font-medium text-white"
-                            >
-                                Go to branches
-                            </button>
-                        </div>
+                            <div className="border-t border-[#EEE7F2] bg-[#FFFCF7] px-6 py-4 sm:px-7">
+                                <button
+                                    type="button"
+                                    onClick={() => router.push("/branches")}
+                                    className="h-[44px] w-full rounded-xl bg-[#2B174C] px-5 text-sm font-semibold text-white transition hover:bg-[#1B0D31]"
+                                >
+                                    Go to branches
+                                </button>
+                            </div>
+                        </section>
                     )}
                 </section>
             </main>
+        </div>
+    );
+}
+
+function SectionHeading({
+                            icon,
+                            title,
+                            description,
+                        }: {
+    icon: ReactNode;
+    title: string;
+    description: string;
+}) {
+    return (
+        <div className="flex items-start gap-2.5">
+            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#EFE8F8] text-[#5634BF]">
+                {icon}
+            </div>
+
+            <div>
+                <h2 className="text-[16px] font-bold text-[#1A1220]">{title}</h2>
+                <p className="mt-0.5 text-sm text-[#7A6A84]">{description}</p>
+            </div>
         </div>
     );
 }
@@ -345,23 +446,29 @@ function TextInput({
     type?: string;
     value: string;
     onChange: (value: string) => void;
-    icon?: React.ReactNode;
+    icon?: ReactNode;
 }) {
     return (
         <div>
-            <label className="mb-2 block text-[14px] font-medium text-[#1A1220]">
+            <label className="mb-2 block text-sm font-medium text-[#1A1220]">
                 {label}
             </label>
 
-            <div className="flex items-center gap-3 rounded-lg border border-[#EBE4F0] bg-[#FDFAF4] px-4 py-3 transition focus-within:border-[#2D1B4E] focus-within:ring-4 focus-within:ring-[#2D1B4E]/10">
-                {icon}
+            <div className="relative">
+                {icon && (
+                    <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#806A8C]">
+                        {icon}
+                    </span>
+                )}
 
                 <input
                     type={type}
                     placeholder={placeholder}
                     value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                    className="w-full bg-transparent text-sm outline-none placeholder:text-[#7A6E88]"
+                    onChange={(event) => onChange(event.target.value)}
+                    className={`h-[44px] w-full rounded-xl border border-[#E6DDF0] bg-white px-3 text-sm text-[#1A1220] outline-none shadow-sm placeholder:text-[#9B8AAA] transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10 ${
+                        icon ? "pl-10" : ""
+                    }`}
                 />
             </div>
         </div>
@@ -370,24 +477,38 @@ function TextInput({
 
 function AccessToggle({
                           label,
+                          detail,
                           checked,
                           onChange,
                       }: {
     label: string;
+    detail: string;
     checked: boolean;
     onChange: (checked: boolean) => void;
 }) {
     return (
-        <label className="flex items-center justify-between rounded-xl bg-[#FDFAF4] px-4 py-3 text-sm text-[#1A1220]">
-            <span>{label}</span>
+        <label
+            className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-4 py-3 transition ${
+                checked
+                    ? "border-[#D7C7E8] bg-[#F8F4FD]"
+                    : "border-[#EEE7F2] bg-white hover:bg-[#FFFCF7]"
+            }`}
+        >
+            <span className="min-w-0">
+                <span className="block text-sm font-semibold text-[#1A1220]">
+                    {label}
+                </span>
+                <span className="mt-0.5 block text-xs text-[#7A6A84]">
+                    {detail}
+                </span>
+            </span>
 
             <input
                 type="checkbox"
                 checked={checked}
-                onChange={(e) => onChange(e.target.checked)}
-                className="h-4 w-4 accent-[#2D1B4E]"
+                onChange={(event) => onChange(event.target.checked)}
+                className="h-4 w-4 shrink-0 cursor-pointer accent-[#2B174C]"
             />
         </label>
     );
 }
-

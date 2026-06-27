@@ -1,14 +1,32 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
     getToken, peso, formatText, getPackageCategory,
     PACKAGE_CATEGORY_OPTIONS,
-    Card, CardHeader, PageHeader, PackageCard, EmptyState,
+    Card, CardHeader, PackageCard, EmptyState,
     PackageFormModal, usePackageForm,
     type PackageCategory, type PackageItem, type Product,
 } from "./_shared";
+
+function formatCurrentDateTime(value: Date) {
+    const dateLabel = value.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+    });
+
+    const timeLabel = value
+        .toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+        })
+        .toLowerCase();
+
+    return `${dateLabel} | ${timeLabel}`;
+}
 
 export default function ManagerPackages() {
     const [branchName, setBranchName] = useState("Branch");
@@ -20,10 +38,23 @@ export default function ManagerPackages() {
     const [search, setSearch] = useState("");
     const [selectedCategory, setSelectedCategory] = useState<PackageCategory>("All");
     const [error, setError] = useState("");
+    const [currentDateTime, setCurrentDateTime] = useState<Date | null>(null);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const form = usePackageForm(storeId, branchId, async () => {
         if (branchId) await fetchPackages(branchId);
     });
+
+    useEffect(() => {
+        const updateDateTime = () => setCurrentDateTime(new Date());
+
+        updateDateTime();
+        const timer = window.setInterval(updateDateTime, 30_000);
+
+        return () => {
+            window.clearInterval(timer);
+        };
+    }, []);
 
     useEffect(() => {
         const savedBranchName =
@@ -84,6 +115,22 @@ export default function ManagerPackages() {
         }
     }
 
+    async function handleRefresh() {
+        setIsRefreshing(true);
+
+        try {
+            if (storeId) {
+                await fetchProducts(storeId);
+            }
+
+            if (branchId) {
+                await fetchPackages(branchId);
+            }
+        } finally {
+            setIsRefreshing(false);
+        }
+    }
+
     async function handleDelete(id: number) {
         const deletedId = await form.handleDelete(id);
         if (deletedId) setPackages((prev) => prev.filter((pkg) => pkg.id !== deletedId));
@@ -110,7 +157,45 @@ export default function ManagerPackages() {
 
     return (
         <>
-            <PageHeader title="Packages" badge={branchName} />
+            <header className="sticky top-0 z-20 border-b border-[#E9E0EF] bg-[#FFFDF8]/95 font-sans backdrop-blur">
+                <div className="flex min-h-[72px] flex-wrap items-center justify-between gap-4 px-6 py-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <h1 className="text-[25px] font-bold text-[#1A1220]">
+                            Packages
+                        </h1>
+
+                        <span
+                            title={branchName}
+                            className="max-w-[220px] truncate rounded-lg bg-[#EFE8F8] px-3.5 py-1.5 text-sm font-medium text-[#4E2C66]"
+                        >
+                            {branchName}
+                        </span>
+                    </div>
+
+                    <div className="flex items-center gap-2.5">
+                        <span className="inline-flex h-[42px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3.5 text-sm font-semibold text-[#2B174C] shadow-sm">
+                            {currentDateTime
+                                ? formatCurrentDateTime(currentDateTime)
+                                : "Loading date..."}
+                        </span>
+
+                        <button
+                            type="button"
+                            onClick={() => void handleRefresh()}
+                            disabled={isRefreshing}
+                            aria-label="Refresh packages"
+                            title="Refresh packages"
+                            className="inline-flex h-[42px] items-center gap-2 rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            <RefreshCw
+                                size={16}
+                                className={isRefreshing ? "animate-spin" : ""}
+                            />
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+            </header>
 
             <section className="px-6 py-4 font-sans">
                 <div className="space-y-3">
@@ -168,7 +253,7 @@ export default function ManagerPackages() {
                         </div>
                     </div>
 
-                    <Card className="min-h-[340px]">
+                    <Card className="min-h-[420px]">
                         <CardHeader title="Branch Package List" action={`${filteredPackages.length} packages`} />
 
                         {error && (
@@ -182,7 +267,7 @@ export default function ManagerPackages() {
                         ) : filteredPackages.length === 0 ? (
                             <EmptyState title="No packages yet." detail="Create your first package using inventory items and discounts." />
                         ) : (
-                            <div className="grid grid-cols-[repeat(auto-fill,260px)] gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                 {filteredPackages.map((pkg, index) => (
                                     <PackageCard
                                         key={pkg.id}

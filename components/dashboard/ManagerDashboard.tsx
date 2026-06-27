@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useInventoryController } from "@/hooks/useInventory";
 import {
@@ -149,23 +150,27 @@ function getUserValue(user: unknown, key: string) {
     return String((user as Record<string, unknown>)[key] ?? "");
 }
 
-function mapProduct(p: ProductApiRaw): Product {
-    const rawBranchId = p.branchId ?? p.branch_id ?? null;
+function mapProduct(product: ProductApiRaw): Product {
+    const rawBranchId = product.branchId ?? product.branch_id ?? null;
 
     return {
-        id: Number(p.id),
+        id: Number(product.id),
         branchId: rawBranchId ? Number(rawBranchId) : null,
         branch_id: rawBranchId ? Number(rawBranchId) : null,
-        name: String(p.name ?? ""),
-        category: String(p.category ?? ""),
-        stock: Number(p.stock ?? 0),
-        alertLevel: Number(p.alertLevel ?? p.alert_level ?? 0),
-        alert_level: Number(p.alertLevel ?? p.alert_level ?? 0),
-        originalPrice: Number(p.originalPrice ?? p.original_price ?? 0),
-        original_price: Number(p.originalPrice ?? p.original_price ?? 0),
-        salesPrice: Number(p.salesPrice ?? p.sales_price ?? 0),
-        sales_price: Number(p.salesPrice ?? p.sales_price ?? 0),
-        hasVariants: Boolean(p.hasVariants ?? p.has_variants ?? false),
+        name: String(product.name ?? ""),
+        category: String(product.category ?? ""),
+        stock: Number(product.stock ?? 0),
+        alertLevel: Number(product.alertLevel ?? product.alert_level ?? 0),
+        alert_level: Number(product.alertLevel ?? product.alert_level ?? 0),
+        originalPrice: Number(
+            product.originalPrice ?? product.original_price ?? 0
+        ),
+        original_price: Number(
+            product.originalPrice ?? product.original_price ?? 0
+        ),
+        salesPrice: Number(product.salesPrice ?? product.sales_price ?? 0),
+        sales_price: Number(product.salesPrice ?? product.sales_price ?? 0),
+        hasVariants: Boolean(product.hasVariants ?? product.has_variants),
     };
 }
 
@@ -181,7 +186,9 @@ function toInventoryProduct(
         category: product.category,
         stock: Number(product.stock || 0),
         alertLevel: Number(product.alertLevel || 0),
-        originalPrice: Number(product.originalPrice ?? product.original_price ?? 0),
+        originalPrice: Number(
+            product.originalPrice ?? product.original_price ?? 0
+        ),
         salesPrice: Number(product.salesPrice ?? product.sales_price ?? 0),
         hasVariants: Boolean(product.hasVariants),
         variants: [],
@@ -239,12 +246,12 @@ function parseOrderItems(itemText?: string) {
 
     return itemText
         .split(",")
-        .map((s) => {
-            const [name, qty] = s.split(" x");
+        .map((item) => {
+            const [name, quantity] = item.split(" x");
 
             return {
                 name: name?.trim() || "Unnamed item",
-                quantity: Number(qty || 0),
+                quantity: Number(quantity || 0),
             };
         })
         .filter((item) => item.name);
@@ -259,18 +266,25 @@ function normalizeOrder(raw: OrderApiRaw): Order {
         branchId: rawBranchId ? Number(rawBranchId) : null,
         branch_id: rawBranchId ? Number(rawBranchId) : null,
         total: Number(raw.total ?? 0),
-        date: raw.date ?? raw.orderDate ?? raw.order_date ?? raw.createdAt ?? raw.created_at ?? "",
+        date:
+            raw.date ??
+            raw.orderDate ??
+            raw.order_date ??
+            raw.createdAt ??
+            raw.created_at ??
+            "",
         orderDate: raw.orderDate ?? raw.order_date ?? raw.date ?? "",
         createdAt: raw.createdAt ?? raw.created_at ?? "",
         item: raw.item ?? "",
-        items: Array.isArray(raw.items) ? raw.items : parseOrderItems(raw.item),
+        items: Array.isArray(raw.items)
+            ? raw.items
+            : parseOrderItems(raw.item),
     };
 }
 
-function filterByBranch<T extends { branchId?: number | null; branch_id?: number | null }>(
-    items: T[],
-    branchId: string
-) {
+function filterByBranch<
+    T extends { branchId?: number | null; branch_id?: number | null }
+>(items: T[], branchId: string) {
     if (!branchId) return items;
 
     const hasBranchIds = items.some((item) => item.branchId || item.branch_id);
@@ -283,7 +297,11 @@ function filterByBranch<T extends { branchId?: number | null; branch_id?: number
     });
 }
 
-async function loadBranchStaffCount(token: string, branchId: string, storeId: string) {
+async function loadBranchStaffCount(
+    token: string,
+    branchId: string,
+    storeId: string
+) {
     const possibleActions = [
         "get_staff",
         "get_staff_members",
@@ -294,7 +312,7 @@ async function loadBranchStaffCount(token: string, branchId: string, storeId: st
 
     for (const action of possibleActions) {
         try {
-            const res = await fetch("/api/staff-management", {
+            const response = await fetch("/api/staff-management", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -308,10 +326,10 @@ async function loadBranchStaffCount(token: string, branchId: string, storeId: st
                 }),
             });
 
-            const text = await res.text();
+            const text = await response.text();
             const data = text ? JSON.parse(text) : {};
 
-            if (!res.ok) continue;
+            if (!response.ok) continue;
 
             if (Array.isArray(data.staff)) return data.staff.length;
             if (Array.isArray(data.staffMembers)) return data.staffMembers.length;
@@ -319,7 +337,7 @@ async function loadBranchStaffCount(token: string, branchId: string, storeId: st
             if (Array.isArray(data.members)) return data.members.length;
             if (Array.isArray(data.data)) return data.data.length;
         } catch {
-            // Try next possible action.
+            // Try the next compatible action.
         }
     }
 
@@ -353,6 +371,24 @@ function formatBookingDate(date: string) {
     };
 }
 
+function formatCurrentDateTime(value: Date) {
+    const dateLabel = value.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+    });
+
+    const timeLabel = value
+        .toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+        })
+        .toLowerCase();
+
+    return `${dateLabel} | ${timeLabel}`;
+}
+
 export default function ManagerDashboard() {
     const { user } = useCurrentUser();
     const inventoryController = useInventoryController();
@@ -365,8 +401,12 @@ export default function ManagerDashboard() {
     const [activeStaffCount, setActiveStaffCount] = useState(0);
 
     const [showAlertsModal, setShowAlertsModal] = useState(false);
-    const [alertFilter, setAlertFilter] = useState<"all" | "low" | "out">("all");
+    const [alertFilter, setAlertFilter] = useState<"all" | "low" | "out">(
+        "all"
+    );
     const [inventoryEditWasOpen, setInventoryEditWasOpen] = useState(false);
+    const [currentDateTime, setCurrentDateTime] = useState<Date | null>(null);
+    const [refreshKey, setRefreshKey] = useState(0);
 
     useEffect(() => {
         const loadData = async () => {
@@ -392,7 +432,11 @@ export default function ManagerDashboard() {
 
             setPermissions(
                 user && typeof user === "object" && "permissions" in user
-                    ? ((user as { permissions?: Record<string, boolean> }).permissions || {})
+                    ? (
+                    user as {
+                        permissions?: Record<string, boolean>;
+                    }
+                ).permissions || {}
                     : getSavedPermissions()
             );
 
@@ -409,7 +453,7 @@ export default function ManagerDashboard() {
             }
 
             try {
-                const productsRes = await fetch("/api/products", {
+                const productsResponse = await fetch("/api/products", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
@@ -421,20 +465,29 @@ export default function ManagerDashboard() {
                     }),
                 });
 
-                const productsText = await productsRes.text();
+                const productsText = await productsResponse.text();
                 const productsData = productsText ? JSON.parse(productsText) : {};
 
-                if (productsRes.ok && Array.isArray(productsData.products)) {
+                if (
+                    productsResponse.ok &&
+                    Array.isArray(productsData.products)
+                ) {
                     const scopedProducts = productsData.products.map(mapProduct);
                     setProducts(scopedProducts);
-                    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(scopedProducts));
+                    sessionStorage.setItem(
+                        STORAGE_KEY,
+                        JSON.stringify(scopedProducts)
+                    );
                 }
             } catch (error) {
-                console.warn("Manager dashboard products fetch failed:", error);
+                console.warn(
+                    "Manager dashboard products fetch failed:",
+                    error
+                );
             }
 
             try {
-                const ordersRes = await fetch("/api/pos", {
+                const ordersResponse = await fetch("/api/pos", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
@@ -446,13 +499,14 @@ export default function ManagerDashboard() {
                     }),
                 });
 
-                const ordersText = await ordersRes.text();
+                const ordersText = await ordersResponse.text();
                 const ordersData: { orders?: OrderApiRaw[] } = ordersText
                     ? JSON.parse(ordersText)
                     : {};
 
-                if (ordersRes.ok && Array.isArray(ordersData.orders)) {
-                    const normalizedOrders: Order[] = ordersData.orders.map(normalizeOrder);
+                if (ordersResponse.ok && Array.isArray(ordersData.orders)) {
+                    const normalizedOrders: Order[] =
+                        ordersData.orders.map(normalizeOrder);
 
                     const currentBranchProducts: Product[] = products.length
                         ? products
@@ -460,37 +514,54 @@ export default function ManagerDashboard() {
 
                     const branchProductNames = new Set(
                         currentBranchProducts
-                            .filter((product: Product) => {
-                                const productBranchId = product.branchId ?? product.branch_id;
-                                return !productBranchId || String(productBranchId) === String(branchId);
+                            .filter((product) => {
+                                const productBranchId =
+                                    product.branchId ?? product.branch_id;
+
+                                return (
+                                    !productBranchId ||
+                                    String(productBranchId) ===
+                                    String(branchId)
+                                );
                             })
-                            .map((product: Product) => product.name.trim().toLowerCase())
+                            .map((product) =>
+                                product.name.trim().toLowerCase()
+                            )
                     );
 
-                    const hasOrderBranchIds = normalizedOrders.some((order: Order) => {
-                        return Boolean(order.branchId ?? order.branch_id);
-                    });
+                    const hasOrderBranchIds = normalizedOrders.some((order) =>
+                        Boolean(order.branchId ?? order.branch_id)
+                    );
 
                     const scopedOrders = hasOrderBranchIds
-                        ? normalizedOrders.filter((order: Order) => {
-                            const orderBranchId = order.branchId ?? order.branch_id;
-                            return String(orderBranchId) === String(branchId);
-                        })
-                        : normalizedOrders.filter((order: Order) => {
-                            return (order.items || []).some((item) =>
-                                branchProductNames.has((item.name || "").trim().toLowerCase())
+                        ? normalizedOrders.filter((order) => {
+                            const orderBranchId =
+                                order.branchId ?? order.branch_id;
+
+                            return (
+                                String(orderBranchId) === String(branchId)
                             );
-                        });
+                        })
+                        : normalizedOrders.filter((order) =>
+                            (order.items || []).some((item) =>
+                                branchProductNames.has(
+                                    (item.name || "").trim().toLowerCase()
+                                )
+                            )
+                        );
 
                     setOrders(scopedOrders);
-                    sessionStorage.setItem(ORDERS_KEY, JSON.stringify(scopedOrders));
+                    sessionStorage.setItem(
+                        ORDERS_KEY,
+                        JSON.stringify(scopedOrders)
+                    );
                 }
             } catch (error) {
                 console.warn("Manager dashboard orders fetch failed:", error);
             }
 
             try {
-                const bookingsRes = await fetch("/api/bookings", {
+                const bookingsResponse = await fetch("/api/bookings", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
@@ -504,16 +575,22 @@ export default function ManagerDashboard() {
                     }),
                 });
 
-                const bookingsText = await bookingsRes.text();
+                const bookingsText = await bookingsResponse.text();
                 const bookingsData = bookingsText ? JSON.parse(bookingsText) : {};
 
-                if (bookingsRes.ok && Array.isArray(bookingsData.bookings)) {
+                if (
+                    bookingsResponse.ok &&
+                    Array.isArray(bookingsData.bookings)
+                ) {
                     setBookings(bookingsData.bookings.map(normalizeBooking));
                 } else {
                     setBookings([]);
                 }
             } catch (error) {
-                console.warn("Manager dashboard bookings fetch failed:", error);
+                console.warn(
+                    "Manager dashboard bookings fetch failed:",
+                    error
+                );
                 setBookings([]);
             }
 
@@ -536,18 +613,18 @@ export default function ManagerDashboard() {
         return () => {
             window.removeEventListener("focus", loadData);
         };
-    }, [user]);
+    }, [user, refreshKey]);
 
-    const canAccess = (permission: string) => {
-        return permissions[permission] === true;
-    };
+    useEffect(() => {
+        const updateDateTime = () => setCurrentDateTime(new Date());
 
-    const initials = branchName
-        .split(" ")
-        .map((word) => word[0])
-        .join("")
-        .slice(0, 2)
-        .toUpperCase();
+        updateDateTime();
+        const timer = window.setInterval(updateDateTime, 30_000);
+
+        return () => window.clearInterval(timer);
+    }, []);
+
+    const canAccess = (permission: string) => permissions[permission] === true;
 
     const totalSales = orders.reduce(
         (sum, order) => sum + Number(order.total || 0),
@@ -555,29 +632,29 @@ export default function ManagerDashboard() {
     );
 
     const totalRevenue = orders.reduce((orderSum, order) => {
-        const orderRevenue = (order.items || []).reduce((itemSum, item) => {
-            const product = products.find(
-                (product) =>
-                    product.name.trim().toLowerCase() ===
-                    (item.name || "").trim().toLowerCase()
-            );
+        const orderRevenue = (order.items || []).reduce(
+            (itemSum, item) => {
+                const product = products.find(
+                    (entry) =>
+                        entry.name.trim().toLowerCase() ===
+                        (item.name || "").trim().toLowerCase()
+                );
 
-            const sellingPrice = Number(
-                product?.salesPrice ??
-                product?.sales_price ??
-                0
-            );
+                const sellingPrice = Number(
+                    product?.salesPrice ?? product?.sales_price ?? 0
+                );
+                const originalPrice = Number(
+                    product?.originalPrice ?? product?.original_price ?? 0
+                );
+                const quantity = Number(item.quantity || 1);
 
-            const originalPrice = Number(
-                product?.originalPrice ??
-                product?.original_price ??
-                0
-            );
-
-            const quantity = Number(item.quantity || 1);
-
-            return itemSum + Math.max(sellingPrice - originalPrice, 0) * quantity;
-        }, 0);
+                return (
+                    itemSum +
+                    Math.max(sellingPrice - originalPrice, 0) * quantity
+                );
+            },
+            0
+        );
 
         return orderSum + orderRevenue;
     }, 0);
@@ -606,44 +683,57 @@ export default function ManagerDashboard() {
     const recentBookings = bookings.slice(0, 3);
 
     const popularItems = Object.values(
-        orders.reduce<Record<string, { name: string; quantity: number }>>((acc, order) => {
-            (order.items || []).forEach((item) => {
-                const name = item.name || "Unnamed item";
-                const quantity = item.quantity || 0;
+        orders.reduce<Record<string, { name: string; quantity: number }>>(
+            (accumulator, order) => {
+                (order.items || []).forEach((item) => {
+                    const name = item.name || "Unnamed item";
+                    const quantity = item.quantity || 0;
 
-                if (!acc[name]) {
-                    acc[name] = { name, quantity: 0 };
-                }
+                    if (!accumulator[name]) {
+                        accumulator[name] = { name, quantity: 0 };
+                    }
 
-                acc[name].quantity += quantity;
-            });
+                    accumulator[name].quantity += quantity;
+                });
 
-            return acc;
-        }, {})
-    )
-        .sort((a, b) => b.quantity - a.quantity)
-        .slice(0, 3);
-
-    const mostBookedPackages = Object.values(
-        bookings.reduce<Record<string, { name: string; quantity: number }>>(
-            (acc, booking) => {
-                const packageName = booking.packageName?.trim() || "Package booking";
-
-                if (!acc[packageName]) {
-                    acc[packageName] = { name: packageName, quantity: 0 };
-                }
-
-                acc[packageName].quantity += 1;
-                return acc;
+                return accumulator;
             },
             {}
         )
     )
-        .sort((a, b) => b.quantity - a.quantity)
+        .sort((first, second) => second.quantity - first.quantity)
         .slice(0, 3);
 
-    const popularMax = Math.max(...popularItems.map((item) => item.quantity), 1);
-    const packageMax = Math.max(...mostBookedPackages.map((item) => item.quantity), 1);
+    const mostBookedPackages = Object.values(
+        bookings.reduce<Record<string, { name: string; quantity: number }>>(
+            (accumulator, booking) => {
+                const packageName =
+                    booking.packageName?.trim() || "Package booking";
+
+                if (!accumulator[packageName]) {
+                    accumulator[packageName] = {
+                        name: packageName,
+                        quantity: 0,
+                    };
+                }
+
+                accumulator[packageName].quantity += 1;
+                return accumulator;
+            },
+            {}
+        )
+    )
+        .sort((first, second) => second.quantity - first.quantity)
+        .slice(0, 3);
+
+    const popularMax = Math.max(
+        ...popularItems.map((item) => item.quantity),
+        1
+    );
+    const packageMax = Math.max(
+        ...mostBookedPackages.map((item) => item.quantity),
+        1
+    );
 
     const openInventoryEditProduct = (product: Product) => {
         const matchingInventoryProduct = inventoryController.products.find(
@@ -652,7 +742,8 @@ export default function ManagerDashboard() {
         );
 
         inventoryController.handleEditProduct(
-            matchingInventoryProduct ?? toInventoryProduct(product, branchName)
+            matchingInventoryProduct ??
+            toInventoryProduct(product, branchName)
         );
     };
 
@@ -698,274 +789,316 @@ export default function ManagerDashboard() {
         user,
     ]);
 
-    // The active-staff data loading stays untouched; this keeps the original dashboard data flow intact.
+    // Kept to preserve the existing active-staff data flow.
     void activeStaffCount;
 
     return (
         <>
-            <main className="min-w-0 flex-1 overflow-x-hidden bg-[#FDFAF4] text-[#1A1220]">
-                <div className="flex h-[54px] items-center justify-between border-b border-[#EBE4F0] bg-[#FDFAF4] px-5">
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-[18px] font-medium text-[#1A1220]">
-                            Dashboard
-                        </h1>
+            <main className="min-w-0 flex-1 overflow-x-hidden bg-[#FDFAF4] font-sans text-[#1A1220]">
+                <header className="sticky top-0 z-20 border-b border-[#E9E0EF] bg-[#FFFDF8]/95 backdrop-blur">
+                    <div className="flex min-h-[72px] flex-wrap items-center justify-between gap-4 px-6 py-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <h1 className="truncate text-[25px] font-bold text-[#1A1220]">
+                                Dashboard
+                            </h1>
 
-                        <span className="rounded-[6px] bg-[#EEE8F8] px-3 py-1 text-[11px] font-medium text-[#2D1B4E]">
-                        {branchName}
-                    </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                    <span className="rounded-[7px] border border-[#EBE4F0] bg-white px-4 py-1.5 text-[11px] text-[#7A6E88]">
-                        {new Date().toLocaleDateString("en-US", {
-                            month: "long",
-                            year: "numeric",
-                        })}
-                    </span>
-
-                        <button className="flex h-[32px] w-[32px] items-center justify-center rounded-[7px] border border-[#EBE4F0] bg-white text-[12px] text-[#C9951A]">
-                            ●
-                        </button>
-
-                        <div className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-[#C9951A] text-[12px] font-medium text-white">
-                            {initials}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Dashboard content only: header and sidebar remain unchanged. */}
-                <section className="p-5 font-sans">
-                    <div className="mx-auto max-w-[1500px] space-y-4">
-                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                            <MetricCard
-                                title="Total Sales"
-                                value={canAccess("pos") ? `₱${totalSales.toLocaleString("en-PH")}` : "—"}
-                                subtext={canAccess("pos") ? `₱${totalRevenue.toLocaleString("en-PH")} revenue` : "No access"}
-                            />
-
-                            <MetricCard
-                                title="Total Booking"
-                                value={canAccess("bookings") ? String(totalBookings) : "—"}
-                                subtext={canAccess("bookings") ? "This month" : "No access"}
-                            />
-
-                            <MetricCard
-                                title="Total Products"
-                                value={canAccess("inventory") ? String(totalProducts) : "—"}
-                                subtext={canAccess("inventory") ? "In inventory" : "No access"}
-                            />
+                            <span
+                                title={branchName}
+                                className="max-w-[220px] truncate rounded-lg bg-[#EFE8F8] px-3.5 py-1.5 text-sm font-medium text-[#4E2C66]"
+                            >
+                                {branchName}
+                            </span>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                            <DashboardPanel className="min-h-[282px]">
-                                <PanelHeading
-                                    title="Popular Items"
-                                    action="View all"
-                                    href="/analytics"
-                                />
+                        <div className="flex items-center gap-2.5">
+                            <span className="inline-flex h-[42px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3.5 text-sm font-semibold text-[#2B174C] shadow-sm">
+                                {currentDateTime
+                                    ? formatCurrentDateTime(currentDateTime)
+                                    : "Loading date..."}
+                            </span>
 
-                                {canAccess("pos") ? (
-                                    popularItems.length > 0 ? (
-                                        <div className="space-y-5 pt-2">
-                                            {popularItems.map((item, index) => (
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setRefreshKey((current) => current + 1)
+                                }
+                                aria-label="Refresh dashboard"
+                                title="Refresh dashboard"
+                                className="inline-flex h-[42px] items-center gap-2 rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31]"
+                            >
+                                <RefreshCw size={16} />
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+                </header>
+
+                <section className="space-y-3.5 px-6 py-4">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                        <MetricCard
+                            title="Total Sales"
+                            value={
+                                canAccess("pos")
+                                    ? `₱${totalSales.toLocaleString("en-PH")}`
+                                    : "—"
+                            }
+                            subtext={
+                                canAccess("pos")
+                                    ? `₱${totalRevenue.toLocaleString(
+                                        "en-PH"
+                                    )} revenue`
+                                    : "No access"
+                            }
+                        />
+                        <MetricCard
+                            title="Total Bookings"
+                            value={
+                                canAccess("bookings")
+                                    ? String(totalBookings)
+                                    : "—"
+                            }
+                            subtext={
+                                canAccess("bookings")
+                                    ? "For this branch"
+                                    : "No access"
+                            }
+                        />
+                        <MetricCard
+                            title="Total Products"
+                            value={
+                                canAccess("inventory")
+                                    ? String(totalProducts)
+                                    : "—"
+                            }
+                            subtext={
+                                canAccess("inventory")
+                                    ? "In inventory"
+                                    : "No access"
+                            }
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                        <DashboardPanel className="min-h-[260px]">
+                            <PanelHeading
+                                title="Popular Items"
+                                action="View all"
+                                href="/analytics"
+                            />
+
+                            {canAccess("pos") ? (
+                                popularItems.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {popularItems.map((item, index) => (
+                                            <RankedProgressRow
+                                                key={item.name}
+                                                rank={index + 1}
+                                                label={item.name}
+                                                value={`${item.quantity} sold`}
+                                                percent={
+                                                    (item.quantity /
+                                                        popularMax) *
+                                                    100
+                                                }
+                                            />
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <DashboardEmptyText text="No popular items yet." />
+                                )
+                            ) : (
+                                <DashboardEmptyText text="Popular items are hidden because POS access is not enabled." />
+                            )}
+
+                            <PanelLegend text="Units sold for this branch" />
+                        </DashboardPanel>
+
+                        <DashboardPanel className="min-h-[260px]">
+                            <PanelHeading
+                                title="Most Booked Packages"
+                                action="View all"
+                                href="/analytics"
+                            />
+
+                            {canAccess("bookings") ? (
+                                mostBookedPackages.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {mostBookedPackages.map(
+                                            (item, index) => (
                                                 <RankedProgressRow
                                                     key={item.name}
                                                     rank={index + 1}
                                                     label={item.name}
-                                                    value={`${item.quantity} sold`}
-                                                    percent={(item.quantity / popularMax) * 100}
+                                                    value={`${item.quantity} booking${
+                                                        item.quantity === 1
+                                                            ? ""
+                                                            : "s"
+                                                    }`}
+                                                    percent={
+                                                        (item.quantity /
+                                                            packageMax) *
+                                                        100
+                                                    }
                                                 />
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <DashboardEmptyText text="No popular items yet." />
-                                    )
+                                            )
+                                        )}
+                                    </div>
                                 ) : (
-                                    <DashboardEmptyText text="Popular items are hidden because POS access is not enabled." />
-                                )}
+                                    <DashboardEmptyText text="No package bookings yet." />
+                                )
+                            ) : (
+                                <DashboardEmptyText text="Package bookings are hidden because booking access is not enabled." />
+                            )}
 
-                                <PanelLegend text="Units sold this month" />
-                            </DashboardPanel>
+                            <PanelLegend text="Bookings for this branch" />
+                        </DashboardPanel>
+                    </div>
 
-                            <DashboardPanel className="min-h-[282px]">
-                                <PanelHeading
-                                    title="Most Booked Packages"
-                                    action="View all"
-                                    href="/analytics"
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                        <DashboardPanel className="overflow-hidden !p-0">
+                            <div className="border-b border-[#E6DDF0] px-4 py-3.5">
+                                <ManagerTableHeader
+                                    title="Upcoming Bookings"
+                                    subtitle="Next scheduled reservations for this branch."
+                                    count={recentBookings.length}
+                                    countLabel="bookings"
+                                    action="View bookings"
+                                    onAction={() =>
+                                        window.location.assign("/bookings")
+                                    }
+                                    tone="violet"
                                 />
+                            </div>
 
-                                {canAccess("bookings") ? (
-                                    mostBookedPackages.length > 0 ? (
-                                        <div className="space-y-5 pt-2">
-                                            {mostBookedPackages.map((item, index) => (
-                                                <RankedProgressRow
-                                                    key={item.name}
-                                                    rank={index + 1}
-                                                    label={item.name}
-                                                    value={`${item.quantity} booking${item.quantity === 1 ? "" : "s"}`}
-                                                    percent={(item.quantity / packageMax) * 100}
-                                                />
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <DashboardEmptyText text="No package bookings yet." />
-                                    )
-                                ) : (
-                                    <DashboardEmptyText text="Package bookings are hidden because booking access is not enabled." />
-                                )}
-
-                                <PanelLegend text="Bookings this month" />
-                            </DashboardPanel>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                            <DashboardPanel className="min-h-[324px] overflow-hidden !p-0 shadow-[0_8px_22px_rgba(45,27,78,0.06)]">
-                                <div className="border-b border-[#F0ECF5] px-5 py-3.5">
-                                    <ManagerTableHeader
-                                        title="Upcoming Booking"
-                                        subtitle="Next scheduled reservations for this branch"
-                                        count={recentBookings.length}
-                                        countLabel="bookings"
-                                        action="View calendar"
-                                        onAction={() => window.location.assign("/bookings")}
-                                        tone="violet"
-                                    />
+                            {!canAccess("bookings") ? (
+                                <div className="px-4 py-4">
+                                    <DashboardEmptyText text="Booking access is not enabled for this account." />
                                 </div>
-
-                                {!canAccess("bookings") ? (
-                                    <div className="px-5 py-4">
-                                        <DashboardEmptyText text="Booking access is not enabled for this account." />
-                                    </div>
-                                ) : recentBookings.length === 0 ? (
-                                    <div className="px-5 py-4">
-                                        <DashboardEmptyText text="No upcoming bookings yet." />
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="overflow-hidden">
-                                            <table className="w-full table-fixed border-collapse">
-                                                <colgroup>
-                                                    <col className="w-[32%]" />
-                                                    <col className="w-[22%]" />
-                                                    <col className="w-[27%]" />
-                                                    <col className="w-[19%]" />
-                                                </colgroup>
-                                                <thead>
-                                                <tr className="border-b border-[#F1EDF5] bg-[#FBFAFD]">
-                                                    <th className="px-4 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
-                                                        Customer / Event
-                                                    </th>
-                                                    <th className="px-2 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
-                                                        Schedule
-                                                    </th>
-                                                    <th className="px-2 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
-                                                        Package
-                                                    </th>
-                                                    <th className="px-4 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
-                                                        Status
-                                                    </th>
-                                                </tr>
-                                                </thead>
-                                                <tbody>
-                                                {recentBookings.map((booking) => (
+                            ) : recentBookings.length === 0 ? (
+                                <div className="px-4 py-4">
+                                    <DashboardEmptyText text="No upcoming bookings yet." />
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full min-w-[650px] border-collapse">
+                                            <thead className="bg-[#FFFCF7]">
+                                            <tr className="border-b border-[#E6DDF0]">
+                                                <TableHeader>
+                                                    Customer / Event
+                                                </TableHeader>
+                                                <TableHeader>
+                                                    Schedule
+                                                </TableHeader>
+                                                <TableHeader>
+                                                    Package
+                                                </TableHeader>
+                                                <TableHeader>
+                                                    Status
+                                                </TableHeader>
+                                            </tr>
+                                            </thead>
+                                            <tbody>
+                                            {recentBookings.map(
+                                                (booking) => (
                                                     <UpcomingBookingRow
                                                         key={booking.id}
                                                         booking={booking}
                                                     />
-                                                ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                                )
+                                            )}
+                                            </tbody>
+                                        </table>
+                                    </div>
 
-                                        <div className="flex items-center justify-center border-t border-[#F0ECF5] bg-[#FCFBFE] py-3">
-                                            <Link
-                                                href="/bookings"
-                                                className="text-[10px] font-semibold text-[#3B1B88] transition hover:text-[#5B2FC6]"
-                                            >
-                                                View all bookings →
-                                            </Link>
-                                        </div>
-                                    </>
-                                )}
-                            </DashboardPanel>
+                                    <div className="flex items-center justify-center border-t border-[#E6DDF0] bg-[#FFFCF7] py-3">
+                                        <Link
+                                            href="/bookings"
+                                            className="text-xs font-semibold text-[#2B174C] transition hover:text-[#5B2FC6]"
+                                        >
+                                            View all bookings
+                                        </Link>
+                                    </div>
+                                </>
+                            )}
+                        </DashboardPanel>
 
-                            <DashboardPanel className="min-h-[324px] overflow-hidden !p-0 shadow-[0_8px_22px_rgba(45,27,78,0.06)]">
-                                <div className="border-b border-[#F0ECF5] px-5 py-3.5">
-                                    <ManagerTableHeader
-                                        title="Inventory Alerts"
-                                        subtitle="Products that need attention or restocking"
-                                        count={lowStockItems.length}
-                                        countLabel="alerts"
-                                        action="View all inventory"
-                                        onAction={() => window.location.assign("/inventory")}
-                                        tone="red"
-                                    />
+                        <DashboardPanel className="overflow-hidden !p-0">
+                            <div className="border-b border-[#E6DDF0] px-4 py-3.5">
+                                <ManagerTableHeader
+                                    title="Inventory Alerts"
+                                    subtitle="Products that need attention or restocking."
+                                    count={lowStockItems.length}
+                                    countLabel="alerts"
+                                    action="View inventory"
+                                    onAction={() =>
+                                        window.location.assign("/inventory")
+                                    }
+                                    tone="red"
+                                />
+                            </div>
+
+                            {!canAccess("inventory") ? (
+                                <div className="px-4 py-4">
+                                    <DashboardEmptyText text="Inventory access is not enabled for this account." />
                                 </div>
-
-                                {!canAccess("inventory") ? (
-                                    <div className="px-5 py-4">
-                                        <DashboardEmptyText text="Inventory access is not enabled for this account." />
-                                    </div>
-                                ) : lowStockItems.length === 0 ? (
-                                    <div className="px-5 py-4">
-                                        <DashboardEmptyText text="All items are well stocked." />
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="overflow-hidden">
-                                            <table className="w-full table-fixed border-collapse">
-                                                <colgroup>
-                                                    <col className="w-[37%]" />
-                                                    <col className="w-[25%]" />
-                                                    <col className="w-[20%]" />
-                                                    <col className="w-[18%]" />
-                                                </colgroup>
-                                                <thead>
-                                                <tr className="border-b border-[#F1EDF5] bg-[#FBFAFD]">
-                                                    <th className="px-4 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
-                                                        Item
-                                                    </th>
-                                                    <th className="px-2 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
-                                                        Category
-                                                    </th>
-                                                    <th className="px-2 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
-                                                        Stock Level
-                                                    </th>
-                                                    <th className="px-4 py-2.5 text-right text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
-                                                        Action
-                                                    </th>
-                                                </tr>
-                                                </thead>
-                                                <tbody>
-                                                {lowStockItems.map((product) => (
+                            ) : lowStockItems.length === 0 ? (
+                                <div className="px-4 py-4">
+                                    <DashboardEmptyText text="All items are well stocked." />
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full min-w-[650px] border-collapse">
+                                            <thead className="bg-[#FFFCF7]">
+                                            <tr className="border-b border-[#E6DDF0]">
+                                                <TableHeader>
+                                                    Item
+                                                </TableHeader>
+                                                <TableHeader>
+                                                    Category
+                                                </TableHeader>
+                                                <TableHeader>
+                                                    Stock Level
+                                                </TableHeader>
+                                                <TableHeader align="right">
+                                                    Action
+                                                </TableHeader>
+                                            </tr>
+                                            </thead>
+                                            <tbody>
+                                            {lowStockItems.map(
+                                                (product) => (
                                                     <InventoryAlertTableRow
                                                         key={product.id}
                                                         product={product}
-                                                        onRestock={() => {
-                                                            openInventoryEditProduct(product);
-                                                        }}
+                                                        onRestock={() =>
+                                                            openInventoryEditProduct(
+                                                                product
+                                                            )
+                                                        }
                                                     />
-                                                ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                                )
+                                            )}
+                                            </tbody>
+                                        </table>
+                                    </div>
 
-                                        <div className="flex items-center justify-center border-t border-[#F0ECF5] bg-[#FCFBFE] py-3">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setAlertFilter("all");
-                                                    setShowAlertsModal(true);
-                                                }}
-                                                className="text-[10px] font-semibold text-[#3B1B88] transition hover:text-[#5B2FC6]"
-                                            >
-                                                View all alerts →
-                                            </button>
-                                        </div>
-                                    </>
-                                )}
-                            </DashboardPanel>
-                        </div>
+                                    <div className="flex items-center justify-center border-t border-[#E6DDF0] bg-[#FFFCF7] py-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAlertFilter("all");
+                                                setShowAlertsModal(true);
+                                            }}
+                                            className="text-xs font-semibold text-[#2B174C] transition hover:text-[#5B2FC6]"
+                                        >
+                                            View all alerts
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </DashboardPanel>
                     </div>
                 </section>
 
@@ -983,8 +1116,6 @@ export default function ManagerDashboard() {
                         }}
                     />
                 )}
-
-
             </main>
 
             <InventoryDialogs inv={inventoryController} />
@@ -996,15 +1127,15 @@ function DashboardPanel({
                             children,
                             className = "",
                         }: {
-    children: React.ReactNode;
+    children: ReactNode;
     className?: string;
 }) {
     return (
-        <div
-            className={`rounded-[16px] border border-[#E6DDF0] bg-white p-5 shadow-sm ${className}`}
+        <section
+            className={`rounded-[14px] border border-[#E6DDF0] bg-white p-4 shadow-sm ${className}`}
         >
             {children}
-        </div>
+        </section>
     );
 }
 
@@ -1018,24 +1149,12 @@ function MetricCard({
     subtext: string;
 }) {
     return (
-        <div className="h-[112px] rounded-[14px] border border-[#E6DDF0] bg-white p-4 shadow-sm">
-            <div className="flex h-full items-start justify-between gap-4">
-                <div className="min-w-0">
-                    <p className="text-xs font-semibold text-[#1A1220]">
-                        {title}
-                    </p>
-
-                    <p className="mt-1 text-[24px] font-bold leading-tight tracking-[-0.03em] text-[#1A1220]">
-                        {value}
-                    </p>
-
-                    <p className="mt-2 text-xs font-medium text-[#1A1220]">
-                        {subtext}
-                    </p>
-                </div>
-
-
-            </div>
+        <div className="flex min-h-[102px] flex-col justify-center rounded-[14px] border border-[#E6DDF0] bg-white px-4 py-3 shadow-sm">
+            <p className="text-sm font-semibold text-[#2B174C]">{title}</p>
+            <p className="mt-1 text-[24px] font-bold leading-tight text-[#1A1220]">
+                {value}
+            </p>
+            <p className="mt-1 text-xs text-[#7A6A84]">{subtext}</p>
         </div>
     );
 }
@@ -1050,14 +1169,14 @@ function PanelHeading({
     href: string;
 }) {
     return (
-        <div className="mb-5 flex items-center justify-between gap-4">
+        <div className="mb-4 flex items-center justify-between gap-4">
             <h2 className="min-w-0 truncate text-[16px] font-bold text-[#1A1220]">
                 {title}
             </h2>
 
             <Link
                 href={href}
-                className="shrink-0 rounded-md bg-transparent px-1 py-1 text-[11px] font-semibold text-[#2B174C] transition hover:bg-transparent hover:text-[#5B2FC6]"
+                className="shrink-0 text-xs font-semibold text-[#2B174C] transition hover:text-[#5B2FC6]"
             >
                 {action}
             </Link>
@@ -1082,39 +1201,35 @@ function ManagerTableHeader({
     onAction: () => void;
     tone: "violet" | "red";
 }) {
-    const accentClass =
+    const countClass =
         tone === "red"
-            ? "bg-[#FFE8E8] text-[#B42318]"
-            : "bg-[#F0EBFF] text-[#4B21BD]";
+            ? "border-[#F2C4C4] bg-[#FFF0F0] text-[#C32F2F]"
+            : "border-[#D8CBE7] bg-[#F7F1FF] text-[#4E2C66]";
 
     return (
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-                <div
-                    className={`mb-2 h-1 w-8 rounded-full ${
-                        tone === "red" ? "bg-[#DC2626]" : "bg-[#4B21BD]"
-                    }`}
-                />
-                <h2 className="truncate text-[15px] font-semibold text-[#1A1220]">
+                <h2 className="truncate text-[16px] font-bold text-[#1A1220]">
                     {title}
                 </h2>
-                <p className="mt-1 truncate text-[10px] text-[#776E84]">
+                <p className="mt-0.5 truncate text-xs text-[#7A6A84]">
                     {subtitle}
                 </p>
             </div>
 
-            <div className="flex shrink-0 items-center gap-3 pt-1">
+            <div className="flex shrink-0 items-center gap-3">
                 <span
-                    className={`rounded-full px-2.5 py-1 text-[9px] font-semibold ${accentClass}`}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${countClass}`}
                 >
                     {count} {countLabel}
                 </span>
+
                 <button
                     type="button"
                     onClick={onAction}
-                    className="text-[10px] font-semibold text-[#3B1B88] transition hover:text-[#5B2FC6]"
+                    className="text-xs font-semibold text-[#2B174C] transition hover:text-[#5B2FC6]"
                 >
-                    {action} →
+                    {action}
                 </button>
             </div>
         </div>
@@ -1140,26 +1255,22 @@ function RankedProgressRow({
                 : "bg-[#E8F0FF] text-[#1D4ED8]";
 
     const barColor =
-        rank === 1
-            ? "#3B1B88"
-            : rank === 2
-                ? "#D97706"
-                : "#2563EB";
+        rank === 1 ? "#3B1B88" : rank === 2 ? "#D97706" : "#2563EB";
 
     return (
         <div>
             <div className="mb-2 flex items-center gap-3">
                 <span
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px] font-bold ${rankClass}`}
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${rankClass}`}
                 >
                     {rank}
                 </span>
 
-                <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#1A1220]">
+                <p className="min-w-0 flex-1 truncate text-sm font-semibold text-[#1A1220]">
                     {label}
                 </p>
 
-                <p className="shrink-0 text-[11px] font-semibold text-[#1A1220]">
+                <p className="shrink-0 text-xs font-semibold text-[#5F4E75]">
                     {value}
                 </p>
             </div>
@@ -1179,9 +1290,25 @@ function RankedProgressRow({
 
 function PanelLegend({ text }: { text: string }) {
     return (
-        <div className="mt-6 text-center text-[11px] font-medium text-[#1A1220]">
-            {text}
-        </div>
+        <p className="mt-5 text-center text-xs text-[#7A6A84]">{text}</p>
+    );
+}
+
+function TableHeader({
+                         children,
+                         align = "left",
+                     }: {
+    children: ReactNode;
+    align?: "left" | "right";
+}) {
+    return (
+        <th
+            className={`px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#806A8C] ${
+                align === "right" ? "text-right" : "text-left"
+            }`}
+        >
+            {children}
+        </th>
     );
 }
 
@@ -1192,14 +1319,14 @@ function UpcomingBookingRow({ booking }: { booking: Booking }) {
 
     const statusClass =
         normalized === "completed"
-            ? "bg-[#E6F6EA] text-[#226B36]"
+            ? "border-[#B7E9C8] bg-[#EDFBF1] text-[#138342]"
             : normalized === "confirmed"
-                ? "bg-[#E8F0FF] text-[#1D4ED8]"
+                ? "border-[#C9D9FB] bg-[#EEF4FF] text-[#1D4ED8]"
                 : normalized === "preparing"
-                    ? "bg-[#F0EAFE] text-[#6B32BE]"
+                    ? "border-[#D8CBE7] bg-[#F7F1FF] text-[#4E2C66]"
                     : normalized === "cancelled" || normalized === "canceled"
-                        ? "bg-[#FFE5E5] text-[#9A2424]"
-                        : "bg-[#FFF4D8] text-[#8A5A00]";
+                        ? "border-[#F2C4C4] bg-[#FFF0F0] text-[#C32F2F]"
+                        : "border-[#F4D79A] bg-[#FFF8E8] text-[#A56607]";
 
     const displayStatus =
         normalized === "pending review"
@@ -1207,37 +1334,37 @@ function UpcomingBookingRow({ booking }: { booking: Booking }) {
             : status.charAt(0).toUpperCase() + status.slice(1);
 
     return (
-        <tr className="border-b border-[#F3EFF6] transition hover:bg-[#FCFAFF] last:border-b-0">
+        <tr className="border-b border-[#EEE7F2] transition hover:bg-[#FFFCF7] last:border-b-0">
             <td className="px-4 py-3">
                 <p
                     title={booking.name || "Customer"}
-                    className="truncate text-[10px] font-semibold text-[#1A1220]"
+                    className="truncate text-sm font-semibold text-[#1A1220]"
                 >
                     {booking.name || "Customer"}
                 </p>
                 <p
                     title={booking.eventName || "Booking reservation"}
-                    className="mt-1 truncate text-[9px] text-[#665D79]"
+                    className="mt-0.5 truncate text-xs text-[#7A6A84]"
                 >
                     {booking.eventName || "Booking reservation"}
                 </p>
             </td>
 
-            <td className="px-2 py-3">
-                <p className="truncate text-[9px] font-semibold text-[#1A1220]">
+            <td className="px-4 py-3">
+                <p className="whitespace-nowrap text-sm font-medium text-[#1A1220]">
                     {dateLabel}
                 </p>
                 {timeLabel && (
-                    <p className="mt-1 text-[8px] text-[#776E84]">
+                    <p className="mt-0.5 text-xs text-[#7A6A84]">
                         {timeLabel}
                     </p>
                 )}
             </td>
 
-            <td className="px-2 py-3">
+            <td className="px-4 py-3">
                 <p
                     title={booking.packageName || "Package booking"}
-                    className="truncate text-[9px] font-medium text-[#1A1220]"
+                    className="truncate text-sm text-[#1A1220]"
                 >
                     {booking.packageName || "Package booking"}
                 </p>
@@ -1245,7 +1372,7 @@ function UpcomingBookingRow({ booking }: { booking: Booking }) {
 
             <td className="px-4 py-3">
                 <span
-                    className={`inline-flex max-w-full truncate rounded-full px-2.5 py-1 text-[8px] font-semibold ${statusClass}`}
+                    className={`inline-flex max-w-full truncate rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass}`}
                 >
                     {displayStatus}
                 </span>
@@ -1265,38 +1392,38 @@ function InventoryAlertTableRow({
     const isOutOfStock = unitsLeft <= 0;
 
     return (
-        <tr className="border-b border-[#F3EFF6] transition hover:bg-[#FFFCFC] last:border-b-0">
+        <tr className="border-b border-[#EEE7F2] transition hover:bg-[#FFFCF7] last:border-b-0">
             <td className="px-4 py-3">
                 <p
                     title={product.name}
-                    className="truncate text-[10px] font-semibold text-[#1A1220]"
+                    className="truncate text-sm font-semibold text-[#1A1220]"
                 >
                     {product.name}
                 </p>
                 <p
-                    className={`mt-1 text-[8px] font-semibold ${
-                        isOutOfStock ? "text-[#B42318]" : "text-[#B45309]"
+                    className={`mt-0.5 text-xs font-medium ${
+                        isOutOfStock ? "text-[#C32F2F]" : "text-[#A56607]"
                     }`}
                 >
                     {isOutOfStock ? "Out of stock" : "Low stock"}
                 </p>
             </td>
 
-            <td className="px-2 py-3">
+            <td className="px-4 py-3">
                 <p
                     title={product.category || "Uncategorized"}
-                    className="truncate text-[9px] text-[#4C4556]"
+                    className="truncate text-sm text-[#5F4E75]"
                 >
                     {product.category || "Uncategorized"}
                 </p>
             </td>
 
-            <td className="px-2 py-3">
+            <td className="px-4 py-3">
                 <span
-                    className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[9px] font-semibold ${
+                    className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${
                         isOutOfStock
-                            ? "bg-[#FFE8E8] text-[#B42318]"
-                            : "bg-[#FFF4D8] text-[#9A5A00]"
+                            ? "border-[#F2C4C4] bg-[#FFF0F0] text-[#C32F2F]"
+                            : "border-[#F4D79A] bg-[#FFF8E8] text-[#A56607]"
                     }`}
                 >
                     {unitsLeft} left
@@ -1307,7 +1434,7 @@ function InventoryAlertTableRow({
                 <button
                     type="button"
                     onClick={onRestock}
-                    className="whitespace-nowrap rounded-lg bg-[#F2EDFF] px-2.5 py-1.5 text-[9px] font-semibold text-[#3B1B88] transition hover:bg-[#E6DDFF]"
+                    className="inline-flex h-[36px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3 text-xs font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF]"
                 >
                     Restock
                 </button>
@@ -1318,8 +1445,8 @@ function InventoryAlertTableRow({
 
 function DashboardEmptyText({ text }: { text: string }) {
     return (
-        <div className="flex min-h-[152px] items-center justify-center rounded-xl border border-dashed border-[#E6DDF0] bg-[#FCFBFF] px-5 text-center">
-            <p className="text-[12px] leading-5 text-[#1A1220]">{text}</p>
+        <div className="flex min-h-[154px] items-center justify-center rounded-xl border border-dashed border-[#E6DDF0] bg-[#FFFCF7] px-5 text-center">
+            <p className="text-sm leading-6 text-[#7A6A84]">{text}</p>
         </div>
     );
 }
@@ -1348,194 +1475,171 @@ function RestockAlertsModal({
         if (tone === "all") {
             return isActive
                 ? "bg-[#2B174C] text-white"
-                : "border border-[#E6DDF0] bg-white text-[#6A5D6F] hover:bg-[#F7F1FF]";
+                : "border border-[#E6DDF0] bg-white text-[#5F4E75] hover:bg-[#F7F1FF]";
         }
 
         if (tone === "low") {
             return isActive
-                ? "bg-[#FFF8D8] text-[#8A5A00] ring-1 ring-[#F5D56B]"
-                : "border border-[#E6DDF0] bg-white text-[#8A5A00] hover:bg-[#FFF8D8]";
+                ? "border border-[#F4D79A] bg-[#FFF8E8] text-[#A56607]"
+                : "border border-[#E6DDF0] bg-white text-[#A56607] hover:bg-[#FFF8E8]";
         }
 
         return isActive
-            ? "bg-[#FFE5E5] text-[#9A2424] ring-1 ring-[#F3A3A3]"
-            : "border border-[#E6DDF0] bg-white text-[#9A2424] hover:bg-[#FFE5E5]";
+            ? "border border-[#F2C4C4] bg-[#FFF0F0] text-[#C32F2F]"
+            : "border border-[#E6DDF0] bg-white text-[#C32F2F] hover:bg-[#FFF0F0]";
     };
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur-sm">
             <div
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="dashboard-restock-alerts-title"
-                className="w-full max-w-4xl rounded-2xl bg-white p-5 shadow-xl sm:p-6"
+                className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[18px] border border-[#E6DDF0] bg-white shadow-2xl"
             >
-                <div className="mb-4 flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFF8D8] text-[#8A5A00]">
-                            <span className="text-[20px] leading-none">⚠</span>
-                        </div>
-
-                        <div>
-                            <h3
-                                id="dashboard-restock-alerts-title"
-                                className="font-serif text-xl font-semibold text-[#1A1220]"
-                            >
-                                Restock Alerts
-                            </h3>
-
-                            <p className="mt-1 text-sm text-[#6A5D6F]">
-                                Low stock and out of stock items that need restocking.
-                            </p>
-                        </div>
+                <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#E6DDF0] bg-white px-6 py-5">
+                    <div>
+                        <h3
+                            id="dashboard-restock-alerts-title"
+                            className="text-[20px] font-bold text-[#1A1220]"
+                        >
+                            Restock Alerts
+                        </h3>
+                        <p className="mt-1 text-sm text-[#7A6A84]">
+                            Low-stock and out-of-stock items that need restocking.
+                        </p>
                     </div>
 
                     <button
                         type="button"
                         onClick={onClose}
                         aria-label="Close restock alerts"
-                        className="text-xl text-[#9B8AAA] hover:text-[#1A1220]"
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E6DDF0] text-[#806A8C] transition hover:bg-[#F7F1FF] hover:text-[#2B174C]"
                     >
                         ×
                     </button>
                 </div>
 
-                <div className="mb-4 flex flex-wrap items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={() => onChangeFilter("all")}
-                        className={[
-                            "rounded-lg px-4 py-2 text-xs font-semibold",
-                            filterButtonClass(activeFilter === "all", "all"),
-                        ].join(" ")}
-                    >
-                        All
-                    </button>
+                <div className="px-6 py-5">
+                    <div className="mb-4 flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => onChangeFilter("all")}
+                            className={`h-[36px] rounded-xl px-3 text-xs font-semibold transition ${filterButtonClass(
+                                activeFilter === "all",
+                                "all"
+                            )}`}
+                        >
+                            All
+                        </button>
 
-                    <button
-                        type="button"
-                        onClick={() => onChangeFilter("low")}
-                        className={[
-                            "rounded-lg px-4 py-2 text-xs font-semibold",
-                            filterButtonClass(activeFilter === "low", "low"),
-                        ].join(" ")}
-                    >
-                        Low Stock ({lowStockCount})
-                    </button>
+                        <button
+                            type="button"
+                            onClick={() => onChangeFilter("low")}
+                            className={`h-[36px] rounded-xl px-3 text-xs font-semibold transition ${filterButtonClass(
+                                activeFilter === "low",
+                                "low"
+                            )}`}
+                        >
+                            Low Stock ({lowStockCount})
+                        </button>
 
-                    <button
-                        type="button"
-                        onClick={() => onChangeFilter("out")}
-                        className={[
-                            "rounded-lg px-4 py-2 text-xs font-semibold",
-                            filterButtonClass(activeFilter === "out", "out"),
-                        ].join(" ")}
-                    >
-                        Out of Stock ({outOfStockCount})
-                    </button>
-                </div>
+                        <button
+                            type="button"
+                            onClick={() => onChangeFilter("out")}
+                            className={`h-[36px] rounded-xl px-3 text-xs font-semibold transition ${filterButtonClass(
+                                activeFilter === "out",
+                                "out"
+                            )}`}
+                        >
+                            Out of Stock ({outOfStockCount})
+                        </button>
+                    </div>
 
-                <div className="max-h-[420px] overflow-y-auto rounded-xl border border-[#E6DDF0]">
-                    <table className="w-full table-fixed text-sm">
-                        <colgroup>
-                            <col className="w-[40%]" />
-                            <col className="w-[27%]" />
-                            <col className="w-[17%]" />
-                            <col className="w-[16%]" />
-                        </colgroup>
-
-                        <thead>
-                        <tr className="border-b border-[#E6DDF0] bg-[#FFFCF7]">
-                            {["Product", "Category", "Current Stock", "Action"].map(
-                                (heading) => (
-                                    <th
-                                        key={heading}
-                                        className={`px-3 py-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#806A8C] ${
-                                            heading === "Product"
-                                                ? "text-left"
-                                                : "text-center"
-                                        }`}
-                                    >
-                                        {heading}
-                                    </th>
-                                )
-                            )}
-                        </tr>
-                        </thead>
-
-                        <tbody>
-                        {items.length === 0 ? (
-                            <tr>
-                                <td
-                                    colSpan={4}
-                                    className="px-3 py-8 text-center text-sm text-[#9B8AAA]"
-                                >
-                                    No stock alerts found.
-                                </td>
+                    <div className="overflow-x-auto rounded-xl border border-[#E6DDF0]">
+                        <table className="w-full min-w-[680px] border-collapse">
+                            <thead className="bg-[#FFFCF7]">
+                            <tr className="border-b border-[#E6DDF0]">
+                                <TableHeader>Product</TableHeader>
+                                <TableHeader>Category</TableHeader>
+                                <TableHeader>Current Stock</TableHeader>
+                                <TableHeader align="right">
+                                    Action
+                                </TableHeader>
                             </tr>
-                        ) : (
-                            items.map((product) => {
-                                const isOutOfStock = product.stock <= 0;
+                            </thead>
 
-                                return (
-                                    <tr
-                                        key={product.id}
-                                        className="border-b border-[#EFE7F4] last:border-0"
+                            <tbody>
+                            {items.length === 0 ? (
+                                <tr>
+                                    <td
+                                        colSpan={4}
+                                        className="px-4 py-10 text-center text-sm text-[#7A6A84]"
                                     >
-                                        <td className="px-3 py-3 text-left">
-                                            <p className="truncate font-serif font-semibold text-[#1A1220]">
-                                                {product.name}
-                                            </p>
+                                        No stock alerts found.
+                                    </td>
+                                </tr>
+                            ) : (
+                                items.map((product) => {
+                                    const isOutOfStock =
+                                        product.stock <= 0;
 
-                                            <p
-                                                className={[
-                                                    "mt-0.5 text-[11px] font-semibold",
-                                                    isOutOfStock
-                                                        ? "text-[#9A2424]"
-                                                        : "text-[#8A5A00]",
-                                                ].join(" ")}
-                                            >
-                                                {isOutOfStock
-                                                    ? "Out of Stock"
-                                                    : "Low Stock"}
-                                            </p>
-                                        </td>
-
-                                        <td className="px-3 py-3 text-center text-[#6A5D6F]">
-                                                <span className="block truncate">
-                                                    {product.category || "—"}
-                                                </span>
-                                        </td>
-
-                                        <td
-                                            className={[
-                                                "px-3 py-3 text-center font-semibold",
-                                                isOutOfStock
-                                                    ? "text-[#9A2424]"
-                                                    : "text-[#8A5A00]",
-                                            ].join(" ")}
+                                    return (
+                                        <tr
+                                            key={product.id}
+                                            className="border-b border-[#EEE7F2] last:border-b-0"
                                         >
-                                            {product.stock}
-                                        </td>
+                                            <td className="px-4 py-3">
+                                                <p className="truncate text-sm font-semibold text-[#1A1220]">
+                                                    {product.name}
+                                                </p>
+                                                <p
+                                                    className={`mt-0.5 text-xs font-medium ${
+                                                        isOutOfStock
+                                                            ? "text-[#C32F2F]"
+                                                            : "text-[#A56607]"
+                                                    }`}
+                                                >
+                                                    {isOutOfStock
+                                                        ? "Out of stock"
+                                                        : "Low stock"}
+                                                </p>
+                                            </td>
 
-                                        <td className="px-3 py-3 text-center">
-                                            <button
-                                                type="button"
-                                                onClick={() => onRestock(product)}
-                                                className="rounded-lg border border-[#2B174C] px-3 py-1.5 text-xs font-semibold text-[#2B174C] hover:bg-[#F7F1FF]"
+                                            <td className="px-4 py-3 text-sm text-[#5F4E75]">
+                                                {product.category || "—"}
+                                            </td>
+
+                                            <td
+                                                className={`px-4 py-3 text-sm font-semibold ${
+                                                    isOutOfStock
+                                                        ? "text-[#C32F2F]"
+                                                        : "text-[#A56607]"
+                                                }`}
                                             >
-                                                Restock
-                                            </button>
-                                        </td>
-                                    </tr>
-                                );
-                            })
-                        )}
-                        </tbody>
-                    </table>
+                                                {product.stock}
+                                            </td>
+
+                                            <td className="px-4 py-3 text-right">
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        onRestock(product)
+                                                    }
+                                                    className="inline-flex h-[36px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3 text-xs font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF]"
+                                                >
+                                                    Restock
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
-

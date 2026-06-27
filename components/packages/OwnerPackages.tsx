@@ -2,7 +2,6 @@
 
 import {
     Building2,
-    CalendarDays,
     Check,
     ChevronDown,
     RefreshCw,
@@ -70,6 +69,24 @@ function normalizeBranch(rawBranch: RawBranch): Branch | null {
     };
 }
 
+function formatCurrentDateTime(value: Date) {
+    const dateLabel = value.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+    });
+
+    const timeLabel = value
+        .toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+        })
+        .toLowerCase();
+
+    return `${dateLabel} | ${timeLabel}`;
+}
+
 export default function OwnerPackages() {
     const [branches, setBranches] = useState<Branch[]>([]);
     const [selectedBranchId, setSelectedBranchId] = useState<number | null>(
@@ -89,7 +106,9 @@ export default function OwnerPackages() {
 
     const [loadingBranches, setLoadingBranches] = useState(true);
     const [loadingPackages, setLoadingPackages] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [error, setError] = useState("");
+    const [currentDateTime, setCurrentDateTime] = useState<Date | null>(null);
 
     const branchSelectorRef = useRef<HTMLDivElement>(null);
 
@@ -239,6 +258,17 @@ export default function OwnerPackages() {
     }, [selectedBranchId, loadPackagesForBranch]);
 
     useEffect(() => {
+        const updateDateTime = () => setCurrentDateTime(new Date());
+
+        updateDateTime();
+        const timer = window.setInterval(updateDateTime, 30_000);
+
+        return () => {
+            window.clearInterval(timer);
+        };
+    }, []);
+
+    useEffect(() => {
         const closeBranchMenuOnOutsideClick = (event: MouseEvent) => {
             if (
                 branchSelectorRef.current &&
@@ -305,47 +335,52 @@ export default function OwnerPackages() {
     };
 
     const handleRefresh = async () => {
-        await loadBranches();
+        const branchIdToRefresh = selectedBranchId;
 
-        if (selectedBranchId) {
-            await loadPackagesForBranch(selectedBranchId);
+        setIsRefreshing(true);
+
+        try {
+            // Only reloads branch/package data. It does not reload the page.
+            await loadBranches();
+
+            if (branchIdToRefresh) {
+                await loadPackagesForBranch(branchIdToRefresh);
+            }
+        } finally {
+            setIsRefreshing(false);
         }
     };
 
     return (
         <>
             <header className="sticky top-0 z-20 border-b border-[#E9E0EF] bg-[#FFFDF8]/95 font-sans backdrop-blur">
-                <div className="flex items-center justify-between px-6 py-3">
+                <div className="flex min-h-[72px] flex-wrap items-center justify-between gap-4 px-6 py-3">
                     <div className="flex items-center gap-3">
                         <h1 className="text-[25px] font-bold text-[#1A1220]">
                             Packages
                         </h1>
-
-                        <span className="rounded-lg bg-[#EFE8F8] px-3.5 py-1.5 text-sm font-medium text-[#4E2C66]">
-                            All branches
-                        </span>
                     </div>
 
                     <div className="flex items-center gap-2.5">
-                        <button
-                            type="button"
-                            className="inline-flex items-center gap-2 rounded-xl border border-[#E6DDF0] bg-white px-3.5 py-2.5 text-sm font-semibold text-[#2B174C] shadow-sm hover:bg-[#F7F1FF]"
-                        >
-                            <CalendarDays size={14} />
-                            {new Date().toLocaleDateString("en-US", {
-                                month: "long",
-                                year: "numeric",
-                            })}
-                            <ChevronDown size={13} />
-                        </button>
+                        <span className="inline-flex h-[42px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3.5 text-sm font-semibold text-[#2B174C] shadow-sm">
+                            {currentDateTime
+                                ? formatCurrentDateTime(currentDateTime)
+                                : "Loading date..."}
+                        </span>
 
                         <button
                             type="button"
                             onClick={() => void handleRefresh()}
-                            className="inline-flex items-center gap-2 rounded-xl bg-[#2B174C] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31]"
+                            disabled={isRefreshing}
+                            aria-label="Refresh packages"
+                            title="Refresh packages"
+                            className="inline-flex h-[42px] items-center gap-2 rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                            <RefreshCw size={14} />
-                            Refresh packages
+                            <RefreshCw
+                                size={16}
+                                className={isRefreshing ? "animate-spin" : ""}
+                            />
+                            Refresh
                         </button>
                     </div>
                 </div>
@@ -584,7 +619,7 @@ export default function OwnerPackages() {
                                 }
                             />
                         ) : (
-                            <div className="grid grid-cols-[repeat(auto-fill,260px)] gap-4">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                                 {filteredPackages.map((pkg) => (
                                     <PackageCard
                                         key={pkg.id}

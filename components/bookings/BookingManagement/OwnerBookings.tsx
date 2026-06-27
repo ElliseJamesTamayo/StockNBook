@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-    BarChart3,
-    CalendarDays,
-    ChevronDown,
-    Gift,
-    RefreshCw,
-    Store,
-    Trophy,
-} from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import {
     Booking,
     BookingRow,
@@ -25,11 +17,30 @@ import {
 
 type InsightPanel = "dates" | "packages" | "branches" | "";
 
+function formatCurrentDateTime(value: Date) {
+    const dateLabel = value.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+    });
+
+    const timeLabel = value
+        .toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+        })
+        .toLowerCase();
+
+    return `${dateLabel} | ${timeLabel}`;
+}
+
 export default function OwnerBookings() {
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [loading, setLoading] = useState(true);
     const [openBranch, setOpenBranch] = useState("");
     const [openInsight, setOpenInsight] = useState<InsightPanel>("");
+    const [currentDateTime, setCurrentDateTime] = useState<Date | null>(null);
 
     async function loadBookings() {
         setLoading(true);
@@ -60,18 +71,23 @@ export default function OwnerBookings() {
                 }),
             });
 
-            const data = await res.json();
+            const data: { bookings?: unknown } = await res.json();
 
             if (!res.ok) {
                 setBookings([]);
                 return;
             }
 
-            const normalizedBookings = (data.bookings || []).map((b: any) =>
-                normalizeBooking(b)
-            );
+            const bookingRecords = Array.isArray(data.bookings)
+                ? data.bookings.filter(
+                    (booking): booking is Record<string, unknown> =>
+                        Boolean(booking) &&
+                        typeof booking === "object" &&
+                        !Array.isArray(booking)
+                )
+                : [];
 
-            setBookings(normalizedBookings);
+            setBookings(bookingRecords.map((booking) => normalizeBooking(booking)));
         } catch (err) {
             console.error("Bookings load failed:", err);
             setBookings([]);
@@ -82,6 +98,17 @@ export default function OwnerBookings() {
 
     useEffect(() => {
         void loadBookings();
+    }, []);
+
+    useEffect(() => {
+        const updateDateTime = () => setCurrentDateTime(new Date());
+
+        updateDateTime();
+        const timer = window.setInterval(updateDateTime, 30_000);
+
+        return () => {
+            window.clearInterval(timer);
+        };
     }, []);
 
     const branchGroups = useMemo(() => {
@@ -196,34 +223,41 @@ export default function OwnerBookings() {
     const mostBookedPackage = packageRankings[0];
 
     return (
-        <>
-            <div className="sticky top-0 z-20 border-b border-[#E9E0EF] bg-[#FFFDF8]/95 backdrop-blur">
-                <div className="flex items-center justify-between px-6 py-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <h1 className="text-[25px] font-bold text-[#1A1220]">
-                            Bookings
-                        </h1>
+        <div className="font-sans text-[#1A1220]">
+            <div className="sticky top-0 z-20 border-b border-[#E9E0EF] bg-[#FFFDF8]/95 font-sans backdrop-blur">
+                <div className="flex min-h-[72px] flex-wrap items-center justify-between gap-4 px-6 py-3">
+                    <h1 className="text-[25px] font-bold text-[#1A1220]">
+                        Bookings
+                    </h1>
 
-                        <span className="rounded-lg bg-[#EFE8F8] px-3.5 py-1.5 text-sm font-medium text-[#4E2C66]">
-                            all branches
+                    <div className="flex items-center gap-2.5">
+                        <span className="inline-flex h-[42px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3.5 text-sm font-semibold text-[#2B174C] shadow-sm">
+                            {currentDateTime
+                                ? formatCurrentDateTime(currentDateTime)
+                                : "Loading date..."}
                         </span>
-                    </div>
 
-                    <button
-                        onClick={() => void loadBookings()}
-                        className="inline-flex items-center gap-2 rounded-xl bg-[#2B174C] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1B0D31]"
-                        type="button"
-                    >
-                        <RefreshCw size={14} />
-                        Refresh bookings
-                    </button>
+                        <button
+                            onClick={() => void loadBookings()}
+                            disabled={loading}
+                            aria-label="Refresh bookings"
+                            title="Refresh bookings"
+                            className="inline-flex h-[42px] items-center gap-2 rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-60"
+                            type="button"
+                        >
+                            <RefreshCw
+                                size={16}
+                                className={loading ? "animate-spin" : ""}
+                            />
+                            Refresh
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <section className="px-6 py-4">
+            <section className="px-6 py-4 font-sans">
                 <div className="mb-3 grid gap-3 lg:grid-cols-3">
                     <CompactMetricCard
-                        icon={<CalendarDays size={15} />}
                         title="Booking Sales"
                         value={peso(bookingSales)}
                         subLabel="Revenue"
@@ -231,7 +265,6 @@ export default function OwnerBookings() {
                     />
 
                     <CompactMetricCard
-                        icon={<BarChart3 size={15} />}
                         title="Total Bookings"
                         value={String(totalBookings)}
                         subLabel="Scope"
@@ -239,7 +272,6 @@ export default function OwnerBookings() {
                     />
 
                     <CompactMetricCard
-                        icon={<Store size={15} />}
                         title="Top Branch"
                         value={topBranch?.name || "—"}
                         subLabel="Most bookings"
@@ -266,7 +298,6 @@ export default function OwnerBookings() {
                     <div className="grid gap-2.5 lg:grid-cols-3">
                         <InsightCard
                             tone="purple"
-                            icon={<CalendarDays size={16} />}
                             title="Busiest Date"
                             value={busiestDate ? formatDate(busiestDate.date) : "—"}
                             subtext={
@@ -287,7 +318,6 @@ export default function OwnerBookings() {
 
                         <InsightCard
                             tone="green"
-                            icon={<Gift size={16} />}
                             title="Most Booked Package"
                             value={mostBookedPackage?.name || "—"}
                             subtext={
@@ -310,7 +340,6 @@ export default function OwnerBookings() {
 
                         <InsightCard
                             tone="amber"
-                            icon={<Trophy size={16} />}
                             title="Branch Ranking"
                             value={topBranch ? `Top: ${topBranch.name}` : "—"}
                             subtext={
@@ -427,18 +456,16 @@ export default function OwnerBookings() {
                     </div>
                 )}
             </section>
-        </>
+        </div>
     );
 }
 
 function CompactMetricCard({
-                               icon,
                                title,
                                value,
                                subLabel,
                                subValue,
                            }: {
-    icon: React.ReactNode;
     title: string;
     value: string;
     subLabel?: string;
@@ -446,34 +473,27 @@ function CompactMetricCard({
 }) {
     return (
         <div className="rounded-[14px] border border-[#E6DDF0] bg-white p-3 shadow-sm">
-            <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F3EAFE] text-[#6C3AD6]">
-                    {icon}
-                </div>
+            <div className="min-w-0">
+                <p className="text-xs font-semibold text-[#2B174C]">{title}</p>
 
-                <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold text-[#2B174C]">{title}</p>
+                <p className="mt-1 truncate text-[19px] font-bold leading-tight text-[#1A1220]">
+                    {value}
+                </p>
 
-                    <p className="mt-1 truncate text-[19px] font-bold leading-tight text-[#1A1220]">
-                        {value}
-                    </p>
-
-                    {subLabel && subValue && (
-                        <div className="mt-2 flex items-center justify-between gap-3 border-t border-[#EFE7F4] pt-2 text-xs">
-                            <span className="text-[#5F4E75]">{subLabel}</span>
-                            <span className="font-semibold text-[#1A1220]">
-                                {subValue}
-                            </span>
-                        </div>
-                    )}
-                </div>
+                {subLabel && subValue && (
+                    <div className="mt-2 flex items-center justify-between gap-3 border-t border-[#EFE7F4] pt-2 text-xs">
+                        <span className="text-[#5F4E75]">{subLabel}</span>
+                        <span className="font-semibold text-[#1A1220]">
+                            {subValue}
+                        </span>
+                    </div>
+                )}
             </div>
         </div>
     );
 }
 
 function InsightCard({
-                         icon,
                          title,
                          value,
                          subtext,
@@ -482,7 +502,6 @@ function InsightCard({
                          tone,
                          onClick,
                      }: {
-    icon: React.ReactNode;
     title: string;
     value: string;
     subtext: string;
@@ -501,38 +520,23 @@ function InsightCard({
     return (
         <button
             onClick={onClick}
-            className={`rounded-[14px] border p-2.5 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${
-                active ? "border-[#2B174C] ring-2 ring-[#E8DDF7]" : toneClass
+            className={`rounded-[14px] border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${
+                active ? "border-[#2B174C] ring-2 ring-[#E8DDF7] bg-white" : toneClass
             }`}
             type="button"
         >
-            <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2.5">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/80">
-                        {icon}
-                    </div>
+            <div className="min-w-0">
+                <p className="text-[10px] font-semibold text-[#5F4E75]">
+                    {title}
+                </p>
 
-                    <div className="min-w-0">
-                        <p className="text-[10px] font-semibold text-[#5F4E75]">
-                            {title}
-                        </p>
+                <p className="mt-0.5 truncate text-sm font-bold leading-snug text-[#1A1220]">
+                    {value}
+                </p>
 
-                        <p className="mt-0.5 truncate text-sm font-bold leading-snug text-[#1A1220]">
-                            {value}
-                        </p>
-
-                        <p className="mt-0.5 text-[10px] font-medium text-[#5F4E75]">
-                            {subtext}
-                        </p>
-                    </div>
-                </div>
-
-                <ChevronDown
-                    size={14}
-                    className={`shrink-0 text-[#2B174C] transition ${
-                        active ? "rotate-180" : "-rotate-90"
-                    }`}
-                />
+                <p className="mt-0.5 text-[10px] font-medium text-[#5F4E75]">
+                    {subtext}
+                </p>
             </div>
 
             <p className="mt-2 text-[10px] font-semibold text-[#4E2C85]">
@@ -717,20 +721,12 @@ function BranchOverviewRow({
                 }`}
             >
                 <td className="px-3 py-3">
-                    <div className="flex items-center gap-2.5">
-                        <ChevronDown
-                            size={14}
-                            className={`shrink-0 text-[#2B174C] transition ${
-                                isOpen ? "rotate-180" : "-rotate-90"
-                            }`}
-                        />
-
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#EFE8F8] text-[#6C3AD6]">
-                            <Store size={14} />
-                        </div>
-
-                        <p className="max-w-[130px] text-sm font-bold leading-snug text-[#1A1220]">
+                    <div>
+                        <p className="max-w-[160px] text-sm font-bold leading-snug text-[#1A1220]">
                             {branch.name}
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-medium text-[#5F4E75]">
+                            {isOpen ? "Hide details" : "View details"}
                         </p>
                     </div>
                 </td>

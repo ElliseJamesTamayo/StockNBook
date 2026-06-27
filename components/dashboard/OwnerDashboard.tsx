@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { RefreshCw } from "lucide-react";
 
 type Branch = {
     id: number;
@@ -120,52 +121,128 @@ function formatDashboardDate(value?: string) {
     };
 }
 
-function normalizeBranch(raw: any): Branch {
+function formatCurrentDashboardDateTime(value: Date) {
+    const dateLabel = value.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+    });
+
+    const timeLabel = value
+        .toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+        })
+        .toLowerCase();
+
+    return `${dateLabel} | ${timeLabel}`;
+}
+
+type ApiRecord = Record<string, unknown>;
+
+function toRecord(value: unknown): ApiRecord {
+    return value && typeof value === "object" && !Array.isArray(value)
+        ? (value as ApiRecord)
+        : {};
+}
+
+function firstDefined(record: ApiRecord, keys: string[]) {
+    for (const key of keys) {
+        const value = record[key];
+
+        if (value !== null && value !== undefined) {
+            return value;
+        }
+    }
+
+    return undefined;
+}
+
+function readText(
+    record: ApiRecord,
+    keys: string[],
+    fallback = ""
+) {
+    const value = firstDefined(record, keys);
+
+    if (typeof value === "string") return value;
+    if (typeof value === "number") return String(value);
+
+    return fallback;
+}
+
+function readNumber(
+    record: ApiRecord,
+    keys: string[],
+    fallback = 0
+) {
+    const value = firstDefined(record, keys);
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function readNullableNumber(record: ApiRecord, keys: string[]) {
+    const value = firstDefined(record, keys);
+
+    if (value === null || value === undefined || value === "") {
+        return null;
+    }
+
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeBranch(value: unknown): Branch {
+    const raw = toRecord(value);
+
     return {
-        id: Number(raw.id ?? raw.branch_id ?? raw.branchId),
-        branchName:
-            raw.branchName ??
-            raw.branch_name ??
-            raw.name ??
-            raw.branch ??
-            "Unnamed Branch",
-        managerName:
-            raw.managerName ??
-            raw.manager_name ??
-            raw.manager ??
-            "",
+        id: readNumber(raw, ["id", "branch_id", "branchId"]),
+        branchName: readText(
+            raw,
+            ["branchName", "branch_name", "name", "branch"],
+            "Unnamed Branch"
+        ),
+        managerName: readText(
+            raw,
+            ["managerName", "manager_name", "manager"]
+        ),
     };
 }
 
-function normalizeBooking(raw: any): Booking {
-    const rawBranchId = raw.branchId ?? raw.branch_id ?? null;
+function normalizeBooking(value: unknown): Booking {
+    const raw = toRecord(value);
+    const rawBranchId = readNullableNumber(raw, ["branchId", "branch_id"]);
 
     return {
-        id: Number(raw.id ?? raw.booking_id),
-        branchId: rawBranchId ? Number(rawBranchId) : null,
-        branch_id: rawBranchId ? Number(rawBranchId) : null,
-        branchName: raw.branchName ?? raw.branch_name ?? null,
-        branch_name: raw.branch_name ?? raw.branchName ?? null,
-        name: raw.name ?? raw.customer_name ?? "Unnamed Client",
-        date: raw.date ?? raw.event_date ?? raw.created_at ?? "",
-        status: raw.status ?? "Pending Review",
-        packageName:
-            raw.packageName ??
-            raw.package_name ??
-            raw.package ??
-            raw.package_title ??
-            raw.service_name ??
-            "",
-        eventName:
-            raw.eventName ??
-            raw.event_name ??
-            raw.event ??
-            raw.event_type ??
-            "",
+        id: readNumber(raw, ["id", "booking_id"]),
+        branchId: rawBranchId,
+        branch_id: rawBranchId,
+        branchName: readText(raw, ["branchName", "branch_name"]) || null,
+        branch_name: readText(raw, ["branch_name", "branchName"]) || null,
+        name: readText(raw, ["name", "customer_name"], "Unnamed Client"),
+        date: readText(raw, ["date", "event_date", "created_at"]),
+        status: readText(raw, ["status"], "Pending Review"),
+        packageName: readText(
+            raw,
+            [
+                "packageName",
+                "package_name",
+                "package",
+                "package_title",
+                "service_name",
+            ]
+        ),
+        eventName: readText(
+            raw,
+            ["eventName", "event_name", "event", "event_type"]
+        ),
     };
 }
 
-function parseOrderItems(itemText?: string) {
+function parseOrderItems(itemText?: string): OrderItem[] {
     if (!itemText) return [];
 
     return itemText
@@ -181,63 +258,89 @@ function parseOrderItems(itemText?: string) {
         .filter((item) => item.name);
 }
 
-function normalizeOrder(raw: any): Order {
-    const rawBranchId = raw.branchId ?? raw.branch_id ?? null;
+function normalizeOrderItem(value: unknown): OrderItem {
+    const raw = toRecord(value);
 
     return {
-        id: raw.id ?? raw.orderId ?? raw.order_id,
-        orderId: raw.orderId ?? raw.order_id ?? raw.id,
-        branchId: rawBranchId ? Number(rawBranchId) : null,
-        branch_id: rawBranchId ? Number(rawBranchId) : null,
-        branchName: raw.branchName ?? raw.branch_name ?? null,
-        branch_name: raw.branch_name ?? raw.branchName ?? null,
-        total: Number(raw.total ?? 0),
-        date: raw.date ?? raw.orderDate ?? raw.order_date ?? raw.createdAt ?? raw.created_at ?? "",
-        orderDate: raw.orderDate ?? raw.order_date ?? raw.date ?? "",
-        createdAt: raw.createdAt ?? raw.created_at ?? "",
-        item: raw.item ?? "",
-        items: Array.isArray(raw.items) ? raw.items : parseOrderItems(raw.item),
+        name: readText(raw, ["name", "productName", "product_name"]),
+        quantity: readNumber(raw, ["quantity", "qty"]),
+        salesPrice: readNumber(raw, ["salesPrice", "sales_price"]),
+        sales_price: readNumber(raw, ["sales_price", "salesPrice"]),
+        sellingPrice: readNumber(raw, ["sellingPrice", "selling_price"]),
+        selling_price: readNumber(raw, ["selling_price", "sellingPrice"]),
+        price: readNumber(raw, ["price"]),
+        originalPrice: readNumber(raw, ["originalPrice", "original_price"]),
+        original_price: readNumber(raw, ["original_price", "originalPrice"]),
+        costPrice: readNumber(raw, ["costPrice", "cost_price"]),
+        cost_price: readNumber(raw, ["cost_price", "costPrice"]),
     };
 }
 
-function normalizeProduct(raw: any): Product {
-    const rawBranchId = raw.branchId ?? raw.branch_id ?? null;
-
-    const sellingPrice = Number(
-        raw.salesPrice ??
-        raw.sales_price ??
-        raw.sellingPrice ??
-        raw.selling_price ??
-        raw.price ??
-        0
-    );
-
-    const originalPrice = Number(
-        raw.originalPrice ??
-        raw.original_price ??
-        raw.costPrice ??
-        raw.cost_price ??
-        raw.origPrice ??
-        raw.orig_price ??
-        0
-    );
+function normalizeOrder(value: unknown): Order {
+    const raw = toRecord(value);
+    const rawBranchId = readNullableNumber(raw, ["branchId", "branch_id"]);
+    const itemText = readText(raw, ["item"]);
+    const rawItems = firstDefined(raw, ["items"]);
+    const items = Array.isArray(rawItems)
+        ? rawItems.map(normalizeOrderItem).filter((item) => item.name)
+        : parseOrderItems(itemText);
 
     return {
-        id: Number(raw.id),
-        branchId: rawBranchId ? Number(rawBranchId) : null,
-        branch_id: rawBranchId ? Number(rawBranchId) : null,
-        branchName: raw.branchName ?? raw.branch_name ?? null,
-        branch_name: raw.branch_name ?? raw.branchName ?? null,
-        name: raw.name ?? "",
-        category: raw.category ?? "",
-        stock: Number(raw.stock ?? 0),
-        alertLevel: Number(raw.alertLevel ?? raw.alert_level ?? 0),
+        id: readText(raw, ["id", "orderId", "order_id"]) || undefined,
+        orderId: readText(raw, ["orderId", "order_id", "id"]) || undefined,
+        branchId: rawBranchId,
+        branch_id: rawBranchId,
+        branchName: readText(raw, ["branchName", "branch_name"]) || null,
+        branch_name: readText(raw, ["branch_name", "branchName"]) || null,
+        total: readNumber(raw, ["total"]),
+        date: readText(
+            raw,
+            ["date", "orderDate", "order_date", "createdAt", "created_at"]
+        ),
+        orderDate: readText(raw, ["orderDate", "order_date", "date"]),
+        createdAt: readText(raw, ["createdAt", "created_at"]),
+        item: itemText,
+        items,
+    };
+}
+
+function normalizeProduct(value: unknown): Product {
+    const raw = toRecord(value);
+    const rawBranchId = readNullableNumber(raw, ["branchId", "branch_id"]);
+
+    const sellingPrice = readNumber(raw, [
+        "salesPrice",
+        "sales_price",
+        "sellingPrice",
+        "selling_price",
+        "price",
+    ]);
+
+    const originalPrice = readNumber(raw, [
+        "originalPrice",
+        "original_price",
+        "costPrice",
+        "cost_price",
+        "origPrice",
+        "orig_price",
+    ]);
+
+    return {
+        id: readNumber(raw, ["id"]),
+        branchId: rawBranchId,
+        branch_id: rawBranchId,
+        branchName: readText(raw, ["branchName", "branch_name"]) || null,
+        branch_name: readText(raw, ["branch_name", "branchName"]) || null,
+        name: readText(raw, ["name"]),
+        category: readText(raw, ["category"]),
+        stock: readNumber(raw, ["stock"]),
+        alertLevel: readNumber(raw, ["alertLevel", "alert_level"]),
         salesPrice: sellingPrice,
         sales_price: sellingPrice,
         sellingPrice: sellingPrice,
         selling_price: sellingPrice,
         price: sellingPrice,
-        originalPrice: originalPrice,
+        originalPrice,
         original_price: originalPrice,
         costPrice: originalPrice,
         cost_price: originalPrice,
@@ -258,15 +361,30 @@ export default function OwnerDashboard() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
     const [managers, setManagers] = useState<BranchManager[]>([]);
+    const [currentDateTime, setCurrentDateTime] = useState(() => new Date());
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     useEffect(() => {
-        async function loadOwnerDashboard() {
-            const token = getSavedItem("token");
-            const storeId =
-                getSavedItem("store_id") ||
-                getSavedItem("stocknbook_store_id");
+        const timer = window.setInterval(() => {
+            setCurrentDateTime(new Date());
+        }, 30_000);
 
-            if (!token) return;
+        return () => {
+            window.clearInterval(timer);
+        };
+    }, []);
+
+    const loadOwnerDashboard = useCallback(async () => {
+        const token = getSavedItem("token");
+        const storeId =
+            getSavedItem("store_id") ||
+            getSavedItem("stocknbook_store_id");
+
+        if (!token) return;
+
+        setIsRefreshing(true);
+
+        try {
 
             try {
                 const branchesRes = await fetch("/api/branches", {
@@ -352,15 +470,11 @@ export default function OwnerDashboard() {
 
             try {
                 const managerRes = await fetch("/api/branch-managers", {
-                    method: "POST",
+                    method: "GET",
                     headers: {
-                        "Content-Type": "application/json",
                         Authorization: `Bearer ${token}`,
                     },
-                    body: JSON.stringify({
-                        action: "get_branch_managers",
-                        store_id: storeId ? Number(storeId) : undefined,
-                    }),
+                    cache: "no-store",
                 });
 
                 const managerData = await managerRes.json().catch(() => ({}));
@@ -372,17 +486,16 @@ export default function OwnerDashboard() {
                 }
             } catch (error) {
                 console.warn("Owner dashboard managers fetch failed:", error);
-            }
+            }        } finally {
+            setIsRefreshing(false);
         }
-
-        void loadOwnerDashboard();
-
-        window.addEventListener("focus", loadOwnerDashboard);
-
-        return () => {
-            window.removeEventListener("focus", loadOwnerDashboard);
-        };
     }, []);
+
+    useEffect(() => {
+        // Load the dashboard once when the page opens.
+        // After that, data refreshes only when the user presses Refresh.
+        void loadOwnerDashboard();
+    }, [loadOwnerDashboard]);
 
     const totalSales = orders.reduce(
         (sum, order) => sum + Number(order.total || 0),
@@ -442,7 +555,7 @@ export default function OwnerDashboard() {
                 ),
             };
         });
-    }, [branches, bookings, orders, products]);
+    }, [branches, orders, products]);
 
     const topPerformingBranches = useMemo(
         () =>
@@ -540,37 +653,35 @@ export default function OwnerDashboard() {
 
     return (
         <>
-            <div className="flex h-[54px] items-center justify-between border-b border-[#EBE4F0] bg-[#FDFAF4] px-5 font-sans">
-                <div className="flex items-center gap-3">
-                    <h1 className="text-[18px] font-medium text-[#1A1220]">
-                        Dashboard
-                    </h1>
+            <div className="flex min-h-[72px] items-center justify-between border-b border-[#E9E0EF] bg-[#FFFDF8] px-6 py-3 font-sans">
+                <h1 className="text-[25px] font-bold tracking-[-0.02em] text-[#1A1220]">
+                    Dashboard
+                </h1>
 
-                    <span className="rounded-[6px] bg-[#FFFBF0] px-3 py-1 text-[11px] font-medium text-[#633806]">
-                        All branches
-                    </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                    <span className="rounded-[7px] border border-[#EBE4F0] bg-white px-4 py-1.5 text-[11px] text-[#7A6E88]">
-                        {new Date().toLocaleDateString("en-US", {
-                            month: "long",
-                            year: "numeric",
-                        })}
+                <div className="flex items-center gap-2.5">
+                    <span className="inline-flex h-[42px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3.5 text-sm font-semibold text-[#2B174C] shadow-sm">
+                        {formatCurrentDashboardDateTime(currentDateTime)}
                     </span>
 
-                    <button className="flex h-[32px] w-[32px] items-center justify-center rounded-[7px] border border-[#EBE4F0] bg-white text-[12px] text-[#C9951A]">
-                        ●
+                    <button
+                        type="button"
+                        onClick={() => void loadOwnerDashboard()}
+                        disabled={isRefreshing}
+                        aria-label="Refresh dashboard details"
+                        title="Refresh dashboard details"
+                        className="inline-flex h-[42px] items-center gap-2 rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        <RefreshCw
+                            size={16}
+                            className={isRefreshing ? "animate-spin" : ""}
+                        />
+                        {isRefreshing ? "Refreshing..." : "Refresh"}
                     </button>
-
-                    <div className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-[#C9951A] text-[12px] font-medium text-white">
-                        YS
-                    </div>
                 </div>
             </div>
 
-            <section className="p-5 font-sans">
-                <div className="mx-auto max-w-[1500px] space-y-4">
+            <section className="px-6 py-5 font-sans">
+                <div className="mx-auto max-w-none space-y-3.5">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         <OwnerStatCard
                             title="Total Branches"
@@ -709,19 +820,19 @@ export default function OwnerDashboard() {
                                             </colgroup>
                                             <thead>
                                             <tr className="border-b border-[#F1EDF5] bg-[#FBFAFD]">
-                                                <th className="px-3 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
+                                                <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.07em] text-[#806A8C]">
                                                     Customer / Event
                                                 </th>
-                                                <th className="px-2 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
+                                                <th className="px-2 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.07em] text-[#806A8C]">
                                                     Branch
                                                 </th>
-                                                <th className="px-2 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
+                                                <th className="px-2 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.07em] text-[#806A8C]">
                                                     Schedule
                                                 </th>
-                                                <th className="px-2 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
+                                                <th className="px-2 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.07em] text-[#806A8C]">
                                                     Package
                                                 </th>
-                                                <th className="px-3 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
+                                                <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.07em] text-[#806A8C]">
                                                     Status
                                                 </th>
                                             </tr>
@@ -751,7 +862,7 @@ export default function OwnerDashboard() {
                                         <button
                                             type="button"
                                             onClick={() => router.push("/bookings")}
-                                            className="text-[10px] font-semibold text-[#3B1B88] transition hover:text-[#5B2FC6]"
+                                            className="text-xs font-semibold text-[#3B1B88] transition hover:text-[#5B2FC6]"
                                         >
                                             View all bookings →
                                         </button>
@@ -790,19 +901,19 @@ export default function OwnerDashboard() {
                                             </colgroup>
                                             <thead>
                                             <tr className="border-b border-[#F1EDF5] bg-[#FBFAFD]">
-                                                <th className="px-3 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
+                                                <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.07em] text-[#806A8C]">
                                                     Product
                                                 </th>
-                                                <th className="px-2 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
+                                                <th className="px-2 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.07em] text-[#806A8C]">
                                                     Branch
                                                 </th>
-                                                <th className="px-2 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
+                                                <th className="px-2 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.07em] text-[#806A8C]">
                                                     Category
                                                 </th>
-                                                <th className="px-2 py-2.5 text-left text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
+                                                <th className="px-2 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.07em] text-[#806A8C]">
                                                     Stock Level
                                                 </th>
-                                                <th className="px-3 py-2.5 text-right text-[8px] font-semibold uppercase tracking-[0.07em] text-[#776E84]">
+                                                <th className="px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.07em] text-[#806A8C]">
                                                     Action
                                                 </th>
                                             </tr>
@@ -835,7 +946,7 @@ export default function OwnerDashboard() {
                                         <button
                                             type="button"
                                             onClick={() => router.push("/inventory")}
-                                            className="text-[10px] font-semibold text-[#3B1B88] transition hover:text-[#5B2FC6]"
+                                            className="text-xs font-semibold text-[#3B1B88] transition hover:text-[#5B2FC6]"
                                         >
                                             View all alerts →
                                         </button>
@@ -859,7 +970,7 @@ function OwnerDashboardCard({
 }) {
     return (
         <div
-            className={`rounded-[14px] border border-[#EBE4F0] bg-white p-4 shadow-sm ${className}`}
+            className={`rounded-[14px] border border-[#E6DDF0] bg-white p-4 shadow-sm ${className}`}
         >
             {children}
         </div>
@@ -876,14 +987,14 @@ function OwnerStatCard({
     note: string;
 }) {
     return (
-        <div className="h-[118px] rounded-[14px] border border-[#EBE4F0] bg-white p-4 shadow-sm">
-            <p className="text-[12px] font-semibold text-[#1A1220]">
+        <div className="flex min-h-[112px] flex-col justify-center rounded-[14px] border border-[#E6DDF0] bg-white px-4 py-4 shadow-sm">
+            <p className="text-sm font-medium text-[#281246]">
                 {title}
             </p>
-            <p className="mt-2 text-[27px] font-bold leading-none tracking-[-0.03em] text-[#1A1220]">
+            <p className="mt-2 text-[24px] font-bold leading-none tracking-[-0.02em] text-[#1A1220]">
                 {value}
             </p>
-            <p className="mt-2 text-[11px] font-medium text-[#5B5273]">
+            <p className="mt-2 text-xs text-[#7A6A84]">
                 {note}
             </p>
         </div>
@@ -901,7 +1012,7 @@ function OwnerCardHeader({
 }) {
     return (
         <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="min-w-0 truncate text-[15px] font-semibold text-[#1A1220]">
+            <h2 className="min-w-0 truncate text-[16px] font-bold text-[#1A1220]">
                 {title}
             </h2>
 
@@ -909,7 +1020,7 @@ function OwnerCardHeader({
                 <button
                     type="button"
                     onClick={onAction}
-                    className="shrink-0 bg-transparent px-1 py-1 text-[10px] font-semibold text-[#2D1B4E] transition hover:text-[#5B2FC6]"
+                    className="shrink-0 bg-transparent px-1 py-1 text-xs font-semibold text-[#2D1B4E] transition hover:text-[#5B2FC6]"
                 >
                     {action}
                 </button>
@@ -948,24 +1059,24 @@ function OwnerTableCardHeader({
                         tone === "red" ? "bg-[#DC2626]" : "bg-[#4B21BD]"
                     }`}
                 />
-                <h2 className="truncate text-[15px] font-semibold text-[#1A1220]">
+                <h2 className="truncate text-[16px] font-bold text-[#1A1220]">
                     {title}
                 </h2>
-                <p className="mt-1 truncate text-[10px] text-[#776E84]">
+                <p className="mt-1 truncate text-xs text-[#7A6A84]">
                     {subtitle}
                 </p>
             </div>
 
             <div className="flex shrink-0 items-center gap-3 pt-1">
                 <span
-                    className={`rounded-full px-2.5 py-1 text-[9px] font-semibold ${accentClass}`}
+                    className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${accentClass}`}
                 >
                     {count} {countLabel}
                 </span>
                 <button
                     type="button"
                     onClick={onAction}
-                    className="text-[10px] font-semibold text-[#3B1B88] transition hover:text-[#5B2FC6]"
+                    className="text-xs font-semibold text-[#3B1B88] transition hover:text-[#5B2FC6]"
                 >
                     {action} →
                 </button>
@@ -999,19 +1110,19 @@ function OwnerRankedProgress({
         <div>
             <div className="mb-1.5 flex items-center gap-2.5">
                 <span
-                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${rankClass}`}
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${rankClass}`}
                 >
                     {rank}
                 </span>
-                <p className="min-w-0 flex-1 truncate text-[11px] font-semibold text-[#1A1220]">
+                <p className="min-w-0 flex-1 truncate text-sm font-semibold text-[#1A1220]">
                     {label}
                 </p>
-                <p className="shrink-0 text-[10px] font-semibold text-[#1A1220]">
+                <p className="shrink-0 text-xs font-semibold text-[#1A1220]">
                     {value}
                 </p>
             </div>
 
-            <div className="ml-[34px] h-1.5 overflow-hidden rounded-full bg-[#EEE8F8]">
+            <div className="ml-[38px] h-1.5 overflow-hidden rounded-full bg-[#EEE8F8]">
                 <div
                     className="h-full rounded-full"
                     style={{
@@ -1026,7 +1137,7 @@ function OwnerRankedProgress({
 
 function OwnerCardLegend({ text }: { text: string }) {
     return (
-        <div className="mt-5 text-center text-[10px] font-medium text-[#5B5273]">
+        <div className="mt-5 text-center text-xs text-[#7A6A84]">
             {text}
         </div>
     );
@@ -1060,13 +1171,13 @@ function OwnerBookingTableRow({
             <td className="px-3 py-3">
                 <p
                     title={booking.name}
-                    className="truncate text-[10px] font-semibold text-[#1A1220]"
+                    className="truncate text-xs font-semibold text-[#1A1220]"
                 >
                     {booking.name}
                 </p>
                 <p
                     title={booking.eventName || "Booking reservation"}
-                    className="mt-1 truncate text-[9px] text-[#665D79]"
+                    className="mt-1 truncate text-[11px] text-[#7A6A84]"
                 >
                     {booking.eventName || "Booking reservation"}
                 </p>
@@ -1075,18 +1186,18 @@ function OwnerBookingTableRow({
             <td className="px-2 py-3">
                 <p
                     title={branchName}
-                    className="truncate text-[9px] font-semibold text-[#3B1B88]"
+                    className="truncate text-[11px] font-semibold text-[#3B1B88]"
                 >
                     {branchName}
                 </p>
             </td>
 
             <td className="px-2 py-3">
-                <p className="truncate text-[9px] font-semibold text-[#1A1220]">
+                <p className="truncate text-[11px] font-semibold text-[#1A1220]">
                     {dateLabel}
                 </p>
                 {timeLabel && (
-                    <p className="mt-1 text-[8px] text-[#776E84]">
+                    <p className="mt-1 text-[10px] text-[#7A6A84]">
                         {timeLabel}
                     </p>
                 )}
@@ -1095,7 +1206,7 @@ function OwnerBookingTableRow({
             <td className="px-2 py-3">
                 <p
                     title={booking.packageName || "Package booking"}
-                    className="truncate text-[9px] font-medium text-[#1A1220]"
+                    className="truncate text-[11px] font-medium text-[#1A1220]"
                 >
                     {booking.packageName || "Package booking"}
                 </p>
@@ -1103,7 +1214,7 @@ function OwnerBookingTableRow({
 
             <td className="px-3 py-3">
                 <span
-                    className={`inline-flex max-w-full truncate rounded-full px-2.5 py-1 text-[8px] font-semibold ${statusClass}`}
+                    className={`inline-flex max-w-full truncate rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusClass}`}
                 >
                     {normalizedStatus === "pending review" ? "Pending" : status}
                 </span>
@@ -1129,12 +1240,12 @@ function OwnerInventoryAlertRow({
             <td className="px-3 py-3">
                 <p
                     title={product.name}
-                    className="truncate text-[10px] font-semibold text-[#1A1220]"
+                    className="truncate text-xs font-semibold text-[#1A1220]"
                 >
                     {product.name}
                 </p>
                 <p
-                    className={`mt-1 text-[8px] font-semibold ${
+                    className={`mt-1 text-[10px] font-semibold ${
                         isOutOfStock ? "text-[#B42318]" : "text-[#B45309]"
                     }`}
                 >
@@ -1145,7 +1256,7 @@ function OwnerInventoryAlertRow({
             <td className="px-2 py-3">
                 <p
                     title={branchName}
-                    className="truncate text-[9px] font-semibold text-[#3B1B88]"
+                    className="truncate text-[11px] font-semibold text-[#3B1B88]"
                 >
                     {branchName}
                 </p>
@@ -1154,7 +1265,7 @@ function OwnerInventoryAlertRow({
             <td className="px-2 py-3">
                 <p
                     title={product.category || "Uncategorized"}
-                    className="truncate text-[9px] text-[#4C4556]"
+                    className="truncate text-[11px] text-[#4C4556]"
                 >
                     {product.category || "Uncategorized"}
                 </p>
@@ -1162,7 +1273,7 @@ function OwnerInventoryAlertRow({
 
             <td className="px-2 py-3">
                 <span
-                    className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[9px] font-semibold ${
+                    className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-semibold ${
                         isOutOfStock
                             ? "bg-[#FFE8E8] text-[#B42318]"
                             : "bg-[#FFF4D8] text-[#9A5A00]"
@@ -1176,7 +1287,7 @@ function OwnerInventoryAlertRow({
                 <button
                     type="button"
                     onClick={onRestock}
-                    className="whitespace-nowrap rounded-lg bg-[#F2EDFF] px-2.5 py-1.5 text-[9px] font-semibold text-[#3B1B88] transition hover:bg-[#E6DDFF]"
+                    className="whitespace-nowrap rounded-lg bg-[#F2EDFF] px-3 py-1.5 text-[10px] font-semibold text-[#3B1B88] transition hover:bg-[#E6DDFF]"
                 >
                     Restock
                 </button>
@@ -1188,7 +1299,7 @@ function OwnerInventoryAlertRow({
 function OwnerEmptyState({ text }: { text: string }) {
     return (
         <div className="flex min-h-[150px] items-center justify-center rounded-xl border border-dashed border-[#E6DDF0] bg-[#FCFBFE] px-5 text-center">
-            <p className="text-[11px] text-[#665D79]">{text}</p>
+            <p className="text-sm text-[#7A6A84]">{text}</p>
         </div>
     );
 }

@@ -6,8 +6,6 @@ import {
     CalendarDays,
     Clock3,
     Package2,
-    ChevronDown,
-    MoreVertical,
     Check,
     Sparkles,
     X,
@@ -19,7 +17,6 @@ import {
     RefreshCw,
     AlertCircle,
     Trash2,
-    CheckCircle,
 } from "lucide-react";
 
 const STORE_MESSENGER = "your.page.username";
@@ -77,22 +74,60 @@ type Booking = {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const categories = ["All", "Birthday", "Debut", "Anniversary", "Wedding", "Corporate", "Kids Party"];
+const categories = [
+    "All",
+    "Birthday",
+    "Debut",
+    "Anniversary",
+    "Wedding",
+    "Corporate",
+    "Kids Party",
+    "Baby Shower",
+    "Christening",
+    "Graduation",
+    "Other",
+];
 
 const STATUS_MAP: Record<string, { color: string; icon: React.ReactNode }> = {
-    "Pending Review": { color: "bg-yellow-100 text-yellow-700", icon: <Clock size={13} /> },
-    "Confirmed":      { color: "bg-blue-100 text-blue-700",     icon: <Check size={13} /> },
-    "Preparing":      { color: "bg-purple-100 text-purple-700", icon: <Clock size={13} /> },
-    "Completed":      { color: "bg-green-100 text-green-700",   icon: <Check size={13} /> },
-    "Cancelled":      { color: "bg-red-100 text-red-700",       icon: <X size={13} /> },
+    "Pending Review": { color: "border border-[#F4D79A] bg-[#FFF8E8] text-[#A56607]", icon: <Clock size={13} /> },
+    "Confirmed":      { color: "border border-[#C9D9FB] bg-[#EEF4FF] text-[#1D4ED8]", icon: <Check size={13} /> },
+    "Preparing":      { color: "border border-[#D8CBE7] bg-[#F7F1FF] text-[#4E2C66]", icon: <Clock size={13} /> },
+    "Completed":      { color: "border border-[#B7E9C8] bg-[#EDFBF1] text-[#138342]", icon: <Check size={13} /> },
+    "Cancelled":      { color: "border border-[#F2C4C4] bg-[#FFF0F0] text-[#C32F2F]", icon: <X size={13} /> },
 };
 
 const TIMELINE_STEPS = ["Pending Review", "Confirmed", "Preparing", "Completed"];
 
+function getPackageCoverImage(
+    pkg: Pick<PackageItem, "name" | "description" | "category">
+) {
+    const source = `${pkg.category || ""} ${pkg.name} ${pkg.description || ""}`.toLowerCase();
+
+    if (source.includes("wedding")) {
+        return "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&w=1200&q=88";
+    }
+    if (source.includes("graduation")) {
+        return "https://images.unsplash.com/photo-1523580494863-6f3031224c94?auto=format&fit=crop&w=1200&q=88";
+    }
+    if (source.includes("baby") || source.includes("christening") || source.includes("baptism")) {
+        return "https://images.unsplash.com/photo-1519710164239-da123dc03ef4?auto=format&fit=crop&w=1200&q=88";
+    }
+    if (source.includes("corporate")) {
+        return "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=88";
+    }
+    if (source.includes("birthday") || source.includes("debut") || source.includes("kids")) {
+        return "https://images.unsplash.com/photo-1530103862676-de8c9debad1d?auto=format&fit=crop&w=1200&q=88";
+    }
+    if (source.includes("anniversary")) {
+        return "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=88";
+    }
+    return "https://images.unsplash.com/photo-1507504031003-b417219a0fde?auto=format&fit=crop&w=1200&q=88";
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
-    const s = STATUS_MAP[status] || { color: "bg-gray-100 text-gray-700", icon: <Clock size={13} /> };
+    const s = STATUS_MAP[status] || { color: "border border-[#E6DDF0] bg-[#FFFDF8] text-[#5F4E75]", icon: <Clock size={13} /> };
     return (
         <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${s.color}`}>
             {s.icon} {status}
@@ -151,39 +186,39 @@ function CancellationConfirmModal({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4">
-            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-[18px] border border-[#E6DDF0] bg-white p-5 shadow-2xl">
                 <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
-                        <AlertCircle size={20} className="text-red-600" />
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF0F0] text-[#C32F2F]">
+                        <AlertCircle size={20} />
                     </div>
                     <div className="flex-1">
-                        <h3 className="text-lg font-bold text-[#1f2a44]">
-                            Cancel Booking?
+                        <h3 className="text-[20px] font-bold text-[#1A1220]">
+                            Cancel booking?
                         </h3>
-                        <p className="mt-2 text-sm text-gray-600">
+                        <p className="mt-2 text-sm leading-6 text-[#7A6A84]">
                             Are you sure you want to cancel this booking? This action cannot be undone.
                         </p>
-                        <p className="mt-3 rounded-lg bg-gray-50 p-2 text-xs font-mono text-gray-700">
+                        <p className="mt-3 rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-3 py-2 text-xs font-mono text-[#5F4E75]">
                             Ref: {bookingReference}
                         </p>
                     </div>
                 </div>
 
-                <div className="mt-6 flex gap-3">
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
                     <button
                         onClick={onCancel}
                         disabled={isLoading}
-                        className="flex-1 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                        className="inline-flex h-[42px] items-center justify-center rounded-xl border border-[#E6DDF0] bg-white px-4 text-sm font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF] disabled:opacity-50"
                     >
-                        Keep Booking
+                        Keep booking
                     </button>
                     <button
                         onClick={onConfirm}
                         disabled={isLoading}
-                        className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+                        className="inline-flex h-[42px] items-center justify-center rounded-xl bg-[#A33E20] px-4 text-sm font-semibold text-white transition hover:bg-[#883117] disabled:opacity-50"
                     >
-                        {isLoading ? "Cancelling..." : "Cancel Booking"}
+                        {isLoading ? "Cancelling..." : "Cancel booking"}
                     </button>
                 </div>
             </div>
@@ -396,46 +431,73 @@ function StatusDrawer({ onClose, storeId }: { onClose: () => void; storeId: numb
         !cancelSuccess;
 
     return (
-        <div className="border-b border-purple-100 bg-purple-50/60 px-6 py-5">
+        <div className="border-b border-[#E6DDF0] bg-[#F7F1FF]/85 px-6 py-5">
             <div className="mx-auto max-w-7xl">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#806A8C]">
+                            Booking tracker
+                        </p>
+                        <h2 className="mt-1 text-[20px] font-bold text-[#1A1220]">
+                            Check your booking status
+                        </h2>
+                    </div>
+
+                    <button
+                        onClick={() => {
+                            onClose();
+                            clearUrl();
+                        }}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E6DDF0] bg-white text-[#806A8C] transition hover:bg-[#F0EAFE] hover:text-[#2B174C]"
+                        aria-label="Close booking status"
+                        type="button"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
 
                 {/* Mode tabs */}
-                <div className="mb-4 flex items-center gap-2">
+                <div className="mb-4 flex flex-wrap items-center gap-2">
                     <button
                         onClick={() => switchMode("ref")}
-                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                            mode === "ref" ? "bg-purple-600 text-white" : "bg-white border border-gray-200 text-gray-500 hover:border-purple-300"
+                        className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+                            mode === "ref"
+                                ? "bg-[#2B174C] text-white shadow-sm"
+                                : "border border-[#E6DDF0] bg-white text-[#5F4E75] hover:bg-[#F0EAFE]"
                         }`}
                     >
                         Search by reference no.
                     </button>
                     <button
                         onClick={() => switchMode("phone")}
-                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                            mode === "phone" ? "bg-purple-600 text-white" : "bg-white border border-gray-200 text-gray-500 hover:border-purple-300"
+                        className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+                            mode === "phone"
+                                ? "bg-[#2B174C] text-white shadow-sm"
+                                : "border border-[#E6DDF0] bg-white text-[#5F4E75] hover:bg-[#F0EAFE]"
                         }`}
                     >
                         I forgot my reference no.
                     </button>
-                    <button onClick={() => { onClose(); clearUrl(); }} className="ml-auto rounded-xl border border-gray-200 bg-white p-2 text-gray-400 hover:text-gray-600">
-                        <X size={15} />
-                    </button>
                 </div>
 
                 {mode === "ref" && (
-                    <div className="flex items-center gap-3">
-                        <Search size={16} className="shrink-0 text-purple-500" />
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <Search size={17} className="hidden shrink-0 text-[#4E2C66] sm:block" />
                         <input
                             value={refInput}
-                            onChange={(e) => { setRefInput(e.target.value.toUpperCase()); setError(""); setBooking(null); }}
+                            onChange={(e) => {
+                                setRefInput(e.target.value.toUpperCase());
+                                setError("");
+                                setBooking(null);
+                            }}
                             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                             placeholder="e.g. YUKA-2026-532001"
-                            className="flex-1 rounded-xl border border-purple-200 bg-white px-4 py-2.5 text-sm font-mono tracking-widest outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                            className="h-[42px] flex-1 rounded-xl border border-[#D8CBE7] bg-white px-3.5 text-sm font-mono tracking-widest text-[#1A1220] outline-none placeholder:font-sans placeholder:tracking-normal placeholder:text-[#9B8AAA] transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10"
                         />
                         <button
                             onClick={handleSearch}
                             disabled={loading}
-                            className="rounded-xl bg-purple-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-60"
+                            className="inline-flex h-[42px] items-center justify-center rounded-xl bg-[#2B174C] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:opacity-60"
                         >
                             {loading ? "Searching…" : "Search"}
                         </button>
@@ -445,31 +507,41 @@ function StatusDrawer({ onClose, storeId }: { onClose: () => void; storeId: numb
                 {mode === "phone" && (
                     <div className="space-y-3">
                         <div className="flex items-center gap-3">
-                            <Search size={16} className="shrink-0 text-purple-500" />
+                            <Search size={17} className="hidden shrink-0 text-[#4E2C66] sm:block" />
                             <input
                                 value={phoneInput}
-                                onChange={(e) => { setPhoneInput(e.target.value); setError(""); setPhoneBookings([]); setSelectedBooking(null); }}
+                                onChange={(e) => {
+                                    setPhoneInput(e.target.value);
+                                    setError("");
+                                    setPhoneBookings([]);
+                                    setSelectedBooking(null);
+                                }}
                                 placeholder="Phone number used when booking (09XXXXXXXXX)"
-                                className="flex-1 rounded-xl border border-purple-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                                className="h-[42px] flex-1 rounded-xl border border-[#D8CBE7] bg-white px-3.5 text-sm text-[#1A1220] outline-none placeholder:text-[#9B8AAA] transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10"
                             />
                         </div>
-                        <div className="flex items-center gap-3">
-                            <CalendarDays size={16} className="shrink-0 text-purple-500" />
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                            <CalendarDays size={17} className="hidden shrink-0 text-[#4E2C66] sm:block" />
                             <input
                                 type="date"
                                 value={dateInput}
-                                onChange={(e) => { setDateInput(e.target.value); setError(""); setPhoneBookings([]); setSelectedBooking(null); }}
-                                className="flex-1 rounded-xl border border-purple-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                                onChange={(e) => {
+                                    setDateInput(e.target.value);
+                                    setError("");
+                                    setPhoneBookings([]);
+                                    setSelectedBooking(null);
+                                }}
+                                className="h-[42px] flex-1 rounded-xl border border-[#D8CBE7] bg-white px-3.5 text-sm text-[#1A1220] outline-none transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10"
                             />
                             <button
                                 onClick={handleSearch}
                                 disabled={loading}
-                                className="rounded-xl bg-purple-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-60"
+                                className="inline-flex h-[42px] items-center justify-center rounded-xl bg-[#2B174C] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:opacity-60"
                             >
                                 {loading ? "Searching…" : "Search"}
                             </button>
                         </div>
-                        <p className="pl-7 text-xs text-gray-400">
+                        <p className="text-xs text-[#7A6A84]">
                             Both your phone number and event date must match your booking.
                         </p>
                     </div>
@@ -877,191 +949,284 @@ export default function CustomerBookingPage() {
 
     if (loading) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb]">
-                <div className="text-lg font-medium text-gray-500">Loading store...</div>
+            <div className="flex min-h-screen items-center justify-center bg-[#FDFAF4] font-sans">
+                <div className="rounded-[14px] border border-[#E6DDF0] bg-white px-5 py-4 text-sm font-semibold text-[#5F4E75] shadow-sm">Loading store...</div>
             </div>
         );
     }
 
     if (error) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb]">
-                <div className="rounded-2xl bg-white p-8 text-red-500 shadow">{error}</div>
+            <div className="flex min-h-screen items-center justify-center bg-[#FDFAF4] px-6 font-sans">
+                <div className="w-full max-w-md rounded-[18px] border border-[#F2C4C4] bg-white p-6 text-sm font-medium text-[#C32F2F] shadow-sm">{error}</div>
             </div>
         );
     }
 
     if (!store) {
-        return <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb]">Store not found</div>;
+        return <div className="flex min-h-screen items-center justify-center bg-[#FDFAF4] font-sans text-sm font-medium text-[#7A6A84]">Store not found</div>;
     }
 
     return (
-        <div className="min-h-screen bg-[#f5f7fb]">
+        <div className="min-h-screen bg-[#FDFAF4] font-sans text-[#1A1220]">
 
-            {/* ── Topbar ── */}
-            <div className="sticky top-0 z-50 border-b border-gray-200 bg-white/90 backdrop-blur">
-                <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-                    <div>
-                        <h1 className="text-2xl font-bold text-[#1f2a44]">{store.store_name}</h1>
-                        <p className="text-sm text-gray-500">Event Packages & Booking</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={() => setShowStatusDrawer((v) => !v)}
-                            className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition ${
-                                showStatusDrawer
-                                    ? "border-purple-400 bg-purple-600 text-white"
-                                    : "border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100"
-                            }`}
-                        >
-                            <Search size={15} />
-                            Check booking status
-                        </button>
-                        <button
-                            onClick={() => window.history.back()}
-                            className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                        >
-                            Back
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {/* ── Inline Status Drawer ── */}
-            {showStatusDrawer && <StatusDrawer storeId={store.id} onClose={() => setShowStatusDrawer(false)} />}
-
-            {/* ── Packages ── */}
-            <section ref={packageRef} className="mx-auto max-w-7xl px-6 py-8">
-                <div className="mb-8 flex flex-wrap gap-3">
-                    {categories.map((category) => {
-                        const active = activeCategory === category;
-                        return (
-                            <button
-                                key={category}
-                                onClick={() => setActiveCategory(category)}
-                                className={`rounded-full px-5 py-2 text-sm font-medium transition ${
-                                    active
-                                        ? "bg-purple-600 text-white shadow-lg shadow-purple-200"
-                                        : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                                }`}
-                            >
-                                {category}
-                            </button>
-                        );
-                    })}
-                    <button className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
-                        More <ChevronDown size={16} />
-                    </button>
-                </div>
-
-                <div className="mb-8">
-                    <div className="flex items-center gap-3">
-                        <h2 className="text-3xl font-bold text-[#1f2a44]">Packages</h2>
-                        <span className="rounded-full bg-purple-100 px-3 py-1 text-sm font-semibold text-purple-700">
-                            {filteredPackages.length}
-                        </span>
-                    </div>
-                    <p className="mt-3 text-sm text-gray-500">
-                        All packages may be customized based on your preferred theme, color motif, or design inspiration.
-                        Final design details can be discussed with the store.
-                    </p>
-                </div>
-
-                {filteredPackages.length === 0 ? (
-                    <div className="rounded-3xl border border-dashed border-gray-300 bg-white p-14 text-center shadow-sm">
-                        <div className="mb-4 flex justify-center"><Sparkles className="text-purple-500" size={42} /></div>
-                        <h3 className="text-xl font-bold text-[#1f2a44]">No packages found</h3>
-                        <p className="mt-2 text-gray-500">Try another category or create a custom request below.</p>
-                    </div>
-                ) : (
-                    <div className="grid gap-7 md:grid-cols-2 xl:grid-cols-4">
-                        {filteredPackages.map((pkg, index) => (
-                            <div key={pkg.id} className="group overflow-hidden rounded-[28px] border border-gray-200 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl">
-                                <div className="relative h-52 overflow-hidden">
-                                    <img
-                                        src={`https://picsum.photos/600/400?random=${index}`}
-                                        alt={pkg.name}
-                                        className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
-                                    />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
-                                    <div className="absolute left-4 top-4">
-                                        <span className="rounded-full bg-green-500 px-3 py-1 text-xs font-semibold text-white shadow">Active</span>
-                                    </div>
-                                    <button className="absolute right-4 top-4 rounded-xl bg-white/90 p-2 shadow transition hover:bg-white">
-                                        <MoreVertical size={18} className="text-gray-700" />
-                                    </button>
-                                </div>
-                                <div className="p-5">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div>
-                                            <h3 className="text-xl font-bold text-[#1f2a44]">{pkg.name}</h3>
-                                            <p className="mt-2 text-3xl font-bold text-purple-600">{peso(pkg.package_price)}</p>
-                                        </div>
-                                        <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-semibold text-purple-700">
-                                            {pkg.category || "Event"}
-                                        </span>
-                                    </div>
-                                    <p className="mt-4 line-clamp-2 text-sm leading-relaxed text-gray-500">
-                                        {pkg.description || "Elegant event package setup for memorable celebrations."}
-                                    </p>
-                                    <div className="mt-5 flex items-center gap-5 border-t border-gray-100 pt-5 text-sm text-gray-500">
-                                        <div className="flex items-center gap-2"><Package2 size={16} /><span>{pkg.inclusions.length} Items</span></div>
-                                        <div className="flex items-center gap-2"><Clock3 size={16} /><span>{pkg.duration}</span></div>
-                                    </div>
-                                    <div className="mt-6 grid grid-cols-2 gap-3">
-                                        <button onClick={() => setDetailsPackage(pkg)} className="rounded-xl bg-purple-600 py-3 text-sm font-semibold text-white transition hover:bg-purple-700">
-                                            View Details
-                                        </button>
-                                        <button onClick={() => handleSelectPackage(pkg)} className="rounded-xl border border-purple-500 py-3 text-sm font-semibold text-purple-600 transition hover:bg-purple-50">
-                                            Select
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
-
-            {/* ── Booking Form ── */}
-            <section className="px-6 pb-16">
-                <div ref={formRef} className="mx-auto max-w-5xl overflow-hidden rounded-[32px] border border-gray-200 bg-white shadow-sm">
-                    <div className="border-b border-gray-100 px-8 py-7">
-                        <h2 className="text-3xl font-bold text-[#1f2a44]">Book Your Event</h2>
-                        <p className="mt-2 text-gray-500">
-                            This form is for sure booking requests. After submission, you will receive a booking
-                            reference number that you can use for follow-ups and status checking.
+            {/* ── Public booking header ── */}
+            <header className="sticky top-0 z-50 border-b border-[#E9E0EF] bg-[#FFFDF8]/95 backdrop-blur">
+                <div className="mx-auto flex min-h-[72px] max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-3">
+                    <div className="min-w-0">
+                        <h1 className="truncate text-[25px] font-bold text-[#1A1220]">
+                            {store.store_name}
+                        </h1>
+                        <p className="mt-0.5 text-sm text-[#7A6A84]">
+                            Event Packages &amp; Booking
                         </p>
                     </div>
 
+                    <button
+                        type="button"
+                        onClick={() => setShowStatusDrawer((value) => !value)}
+                        className={`inline-flex h-[42px] shrink-0 items-center gap-2 rounded-xl border px-4 text-sm font-semibold transition ${
+                            showStatusDrawer
+                                ? "border-[#2B174C] bg-[#2B174C] text-white shadow-sm"
+                                : "border-[#D8CBE7] bg-[#F7F1FF] text-[#2B174C] hover:bg-[#F0EAFE]"
+                        }`}
+                    >
+                        <Search size={16} />
+                        Check booking status
+                    </button>
+                </div>
+            </header>
+
+            {/* ── Packages ── */}
+            <section ref={packageRef} className="mx-auto max-w-7xl px-6 py-4">
+                {/* Booking tracker appears directly above Categories. */}
+                {showStatusDrawer && (
+                    <div className="mb-3">
+                        <StatusDrawer
+                            storeId={store.id}
+                            onClose={() => setShowStatusDrawer(false)}
+                        />
+                    </div>
+                )}
+
+                <div className="rounded-[14px] border border-[#E6DDF0] bg-white p-3 shadow-sm">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <h2 className="text-sm font-bold text-[#1A1220]">
+                            Categories
+                        </h2>
+
+                        <span className="shrink-0 text-xs font-semibold text-[#806A8C]">
+                            {categories.length - 1} categories
+                        </span>
+                    </div>
+
+                    <div className="overflow-x-auto pb-1">
+                        <div className="flex min-w-max gap-2">
+                            {categories.map((category) => {
+                                const active = activeCategory === category;
+
+                                return (
+                                    <button
+                                        key={category}
+                                        type="button"
+                                        onClick={() => setActiveCategory(category)}
+                                        className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+                                            active
+                                                ? "bg-[#2B174C] text-white shadow-sm"
+                                                : "border border-[#E6DDF0] bg-white text-[#5F4E75] hover:bg-[#F7F1FF]"
+                                        }`}
+                                    >
+                                        {category}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-3 rounded-[14px] border border-[#E6DDF0] bg-white p-3 shadow-sm">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                            <h2 className="text-[16px] font-bold text-[#1A1220]">
+                                Available Packages
+                            </h2>
+                            <p className="mt-0.5 text-xs text-[#7A6A84]">
+                                Choose a package and customize the theme, color motif, or event details.
+                            </p>
+                        </div>
+
+                        <span className="shrink-0 text-xs font-semibold text-[#806A8C]">
+                            {filteredPackages.length} package{filteredPackages.length === 1 ? "" : "s"}
+                        </span>
+                    </div>
+
+                    {filteredPackages.length === 0 ? (
+                        <div className="flex min-h-[280px] items-center justify-center rounded-[14px] border border-dashed border-[#E6DDF0] bg-[#FFFCF7] px-5 text-center">
+                            <div>
+                                <div className="mb-3 flex justify-center">
+                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#EFE8F8] text-[#4E2C66]">
+                                        <Sparkles size={18} />
+                                    </div>
+                                </div>
+                                <h3 className="text-sm font-semibold text-[#1A1220]">
+                                    No packages found
+                                </h3>
+                                <p className="mt-1 text-xs leading-5 text-[#7A6A84]">
+                                    Try another category or send a custom booking request below.
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            {filteredPackages.map((pkg, index) => {
+                                const featured = index === 1;
+
+                                return (
+                                    <article
+                                        key={pkg.id}
+                                        className="group overflow-hidden rounded-[18px] border border-[#E6DDF0] bg-white shadow-sm transition duration-200 hover:-translate-y-1 hover:border-[#D4C1E7] hover:shadow-md"
+                                    >
+                                        <div className="h-36 overflow-hidden bg-[#F5EEF6]">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img
+                                                src={getPackageCoverImage(pkg)}
+                                                alt={`${pkg.name} package`}
+                                                className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                                            />
+                                        </div>
+
+                                        <div
+                                            className={`px-4 py-4 text-white ${
+                                                featured
+                                                    ? "bg-[#C9951A]"
+                                                    : "bg-[#2D1B4E]"
+                                            }`}
+                                        >
+                                            <div className="min-w-0">
+                                                <p className="min-h-[40px] text-[16px] font-semibold leading-5">
+                                                    {pkg.name}
+                                                </p>
+
+                                                <p className="mt-1 text-[22px] font-bold leading-tight">
+                                                    {peso(pkg.package_price)}
+                                                </p>
+
+                                                <p className="mt-1 text-xs leading-none text-white/80">
+                                                    {pkg.category || "Event"} package
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-4">
+                                            <p className="line-clamp-2 min-h-11 text-[13px] leading-5 text-[#7A6A84]">
+                                                {pkg.description ||
+                                                    "Event setup designed for a memorable celebration."}
+                                            </p>
+
+                                            <div className="mt-4 flex items-center gap-4 border-t border-[#EFE7F4] pt-3">
+                                                <div className="flex items-center gap-1.5 text-xs text-[#7A6A84]">
+                                                    <Package2 size={14} />
+                                                    <span>
+                                                        {pkg.inclusions.length}{" "}
+                                                        {pkg.inclusions.length === 1
+                                                            ? "Item"
+                                                            : "Items"}
+                                                    </span>
+                                                </div>
+
+                                                <div className="flex items-center gap-1.5 text-xs text-[#7A6A84]">
+                                                    <Clock3 size={14} />
+                                                    <span>{pkg.duration || "Flexible"}</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-3 flex items-center justify-between border-t border-[#EFE7F4] pt-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDetailsPackage(pkg)}
+                                                    className="text-xs font-semibold text-[#2B174C] transition hover:text-[#5B2FC6]"
+                                                >
+                                                    View details →
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSelectPackage(pkg)}
+                                                    className="text-xs font-semibold text-[#2B174C] transition hover:text-[#5B2FC6]"
+                                                >
+                                                    Select
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            </section>
+
+            {/* ── Booking Form ── */}
+            <section className="mx-auto max-w-7xl px-6 pb-16 sm:pb-20">
+                <div
+                    ref={formRef}
+                    className="overflow-hidden rounded-[20px] border border-[#E6DDF0] bg-white shadow-sm"
+                >
+                    <div className="border-b border-[#E6DDF0] bg-[#FFFDF8] px-6 py-6 sm:px-8">
+                        <div className="flex flex-wrap items-start gap-3">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#EFE8F8] text-[#4E2C66]">
+                                <CalendarDays size={20} />
+                            </div>
+                            <div>
+                                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#806A8C]">
+                                    Booking request
+                                </p>
+                                <h2 className="mt-1 text-[27px] font-bold tracking-[-0.02em] text-[#1A1220]">
+                                    Book your event
+                                </h2>
+                                <p className="mt-2 max-w-2xl text-sm leading-6 text-[#7A6A84]">
+                                    Submit your details and the store will review your request. Save your booking
+                                    reference number to follow up or track the status at any time.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
                     {showSuccess ? (
-                        <div className="px-8 py-20 text-center">
+                        <div className="px-6 py-16 text-center sm:px-8">
                             <div className="mb-5 flex justify-center">
-                                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
-                                    <Check size={40} className="text-green-600" />
+                                <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[#B7E9C8] bg-[#EDFBF1] text-[#138342]">
+                                    <Check size={30} />
                                 </div>
                             </div>
-                            <h3 className="text-3xl font-bold text-[#1f2a44]">Booking Request Submitted!</h3>
-                            <p className="mt-3 text-gray-500">
+                            <h3 className="text-[28px] font-bold tracking-[-0.02em] text-[#1A1220]">
+                                Booking request submitted
+                            </h3>
+                            <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-[#7A6A84]">
                                 Save your booking reference number below. You can check your status anytime using the
-                                <strong className="text-purple-700"> Check booking status</strong> button at the top.
+                                <strong className="text-[#2B174C]"> Track booking</strong> button at the top.
                             </p>
 
-                            <div className="mx-auto mt-8 max-w-md rounded-3xl border border-purple-100 bg-purple-50 p-6">
-                                <p className="text-sm font-semibold text-gray-500">Booking Reference No.</p>
+                            <div className="mx-auto mt-7 max-w-md rounded-[18px] border border-[#D8CBE7] bg-[#F7F1FF] p-5">
+                                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#806A8C]">
+                                    Booking reference no.
+                                </p>
                                 <div className="mt-3 flex items-center justify-center gap-3">
-                                    <p className="text-2xl font-black tracking-wide text-purple-700">{bookingReference}</p>
+                                    <p className="text-[22px] font-bold tracking-wide text-[#2B174C]">
+                                        {bookingReference}
+                                    </p>
                                     <button
+                                        type="button"
                                         onClick={copyReference}
-                                        className="rounded-xl bg-white p-2 text-purple-600 shadow-sm hover:bg-purple-100"
+                                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#D8CBE7] bg-white text-[#2B174C] shadow-sm transition hover:bg-[#F0EAFE]"
                                         title="Copy reference number"
                                     >
-                                        <Copy size={18} />
+                                        <Copy size={17} />
                                     </button>
                                 </div>
                             </div>
 
-                            <div className="mx-auto mt-6 max-w-lg rounded-2xl bg-gray-50 p-5 text-sm text-gray-600">
+                            <div className="mx-auto mt-5 max-w-lg rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] p-4 text-sm leading-6 text-[#7A6A84]">
                                 Your booking is now in the store&apos;s admin system for review. The store can confirm,
                                 prepare, complete, or cancel the booking from their admin dashboard.
                             </div>
@@ -1069,7 +1234,7 @@ export default function CustomerBookingPage() {
                             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
                                 <button
                                     onClick={() => { setShowStatusDrawer(true); setShowSuccess(false); setBookingReference(""); }}
-                                    className="rounded-xl border border-purple-300 bg-white px-6 py-3 font-medium text-purple-700 hover:bg-purple-50"
+                                    className="inline-flex h-[42px] items-center justify-center rounded-xl border border-[#D8CBE7] bg-white px-5 text-sm font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF]"
                                 >
                                     Check Booking Status
                                 </button>
@@ -1077,7 +1242,7 @@ export default function CustomerBookingPage() {
                                     href={`https://m.me/${STORE_MESSENGER}`}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="rounded-xl bg-purple-600 px-6 py-3 font-medium text-white hover:bg-purple-700"
+                                    className="inline-flex h-[42px] items-center justify-center rounded-xl bg-[#2B174C] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31]"
                                 >
                                     Continue on Messenger
                                 </a>
@@ -1085,17 +1250,17 @@ export default function CustomerBookingPage() {
 
                             <button
                                 onClick={() => { setShowSuccess(false); setBookingReference(""); }}
-                                className="mt-8 text-sm font-medium text-gray-400 underline hover:text-gray-600"
+                                className="mt-7 text-sm font-semibold text-[#806A8C] underline decoration-[#D8CBE7] underline-offset-4 transition hover:text-[#2B174C]"
                             >
                                 Submit another booking
                             </button>
                         </div>
                     ) : (
-                        <div className="grid gap-10 p-8 lg:grid-cols-[1fr_380px]">
+                        <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_360px]">
 
                             {/* ── Top error banner ── */}
                             {Object.keys(fieldErrors).some((k) => fieldErrors[k]) && (
-                                <div className="col-span-full rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-600">
+                                <div className="col-span-full rounded-xl border border-[#F2C4C4] bg-[#FFF0F0] px-4 py-3 text-sm font-medium text-[#C32F2F]">
                                     Please fix the highlighted fields before submitting.
                                 </div>
                             )}
@@ -1103,23 +1268,41 @@ export default function CustomerBookingPage() {
                             <div>
                                 {/* Booking Type */}
                                 <div>
-                                    <label className="mb-3 block text-sm font-semibold text-gray-700">Booking Type</label>
-                                    <div className="grid grid-cols-2 gap-3">
+                                    <label className="mb-3 block text-sm font-semibold text-[#1A1220]">
+                                        Booking type
+                                    </label>
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                         <button
                                             type="button"
                                             onClick={() => { setBookingType("package"); clearError("selection"); }}
-                                            className={`rounded-2xl border p-4 text-left transition ${bookingType === "package" ? "border-purple-500 bg-purple-50" : "border-gray-200 bg-white"}`}
+                                            className={`rounded-xl border p-4 text-left transition ${
+                                                bookingType === "package"
+                                                    ? "border-[#2B174C] bg-[#F7F1FF] shadow-sm"
+                                                    : "border-[#E6DDF0] bg-white hover:bg-[#FFFDF8]"
+                                            }`}
                                         >
-                                            <div className="font-semibold text-[#1f2a44]">Package Booking</div>
-                                            <div className="mt-1 text-sm text-gray-500">Select from available packages</div>
+                                            <div className="text-sm font-semibold text-[#1A1220]">
+                                                Package booking
+                                            </div>
+                                            <div className="mt-1 text-xs leading-5 text-[#7A6A84]">
+                                                Select from available packages
+                                            </div>
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => { setBookingType("custom"); clearError("selection"); }}
-                                            className={`rounded-2xl border p-4 text-left transition ${bookingType === "custom" ? "border-purple-500 bg-purple-50" : "border-gray-200 bg-white"}`}
+                                            className={`rounded-xl border p-4 text-left transition ${
+                                                bookingType === "custom"
+                                                    ? "border-[#2B174C] bg-[#F7F1FF] shadow-sm"
+                                                    : "border-[#E6DDF0] bg-white hover:bg-[#FFFDF8]"
+                                            }`}
                                         >
-                                            <div className="font-semibold text-[#1f2a44]">Custom Request</div>
-                                            <div className="mt-1 text-sm text-gray-500">Personalized event setup</div>
+                                            <div className="text-sm font-semibold text-[#1A1220]">
+                                                Custom request
+                                            </div>
+                                            <div className="mt-1 text-xs leading-5 text-[#7A6A84]">
+                                                Personalized event setup
+                                            </div>
                                         </button>
                                     </div>
                                 </div>
@@ -1128,12 +1311,16 @@ export default function CustomerBookingPage() {
                                 <div className="mt-6">
                                     {bookingType === "package" ? (
                                         <>
-                                            <label className="mb-3 block text-sm font-semibold text-gray-700">Select Package</label>
+                                            <label className="mb-3 block text-sm font-semibold text-[#1A1220]">
+                                                Select package
+                                            </label>
                                             <select
                                                 value={selectedPackage}
                                                 onChange={(e) => { setSelectedPackage(e.target.value); clearError("selection"); }}
-                                                className={`w-full rounded-2xl border bg-white p-4 text-gray-700 outline-none transition focus:border-purple-400 ${
-                                                    fieldErrors.selection ? "border-red-400 bg-red-50" : "border-gray-200"
+                                                className={`h-[48px] w-full rounded-xl border bg-[#FFFDF8] px-3 text-sm text-[#1A1220] outline-none transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10 ${
+                                                    fieldErrors.selection
+                                                        ? "border-[#F2C4C4] bg-[#FFF0F0]"
+                                                        : "border-[#E6DDF0]"
                                                 }`}
                                             >
                                                 <option value="">Choose a package</option>
@@ -1149,13 +1336,17 @@ export default function CustomerBookingPage() {
                                         </>
                                     ) : (
                                         <>
-                                            <label className="mb-3 block text-sm font-semibold text-gray-700">Custom Request</label>
+                                            <label className="mb-3 block text-sm font-semibold text-[#1A1220]">
+                                                Custom request
+                                            </label>
                                             <textarea
                                                 value={customOrder}
                                                 onChange={(e) => { setCustomOrder(e.target.value); clearError("selection"); }}
                                                 placeholder="Describe your custom event setup request..."
-                                                className={`min-h-[140px] w-full resize-none rounded-2xl border p-4 outline-none transition focus:border-purple-400 ${
-                                                    fieldErrors.selection ? "border-red-400 bg-red-50" : "border-gray-200"
+                                                className={`min-h-[132px] w-full resize-none rounded-xl border bg-[#FFFDF8] p-3 text-sm text-[#1A1220] outline-none transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10 ${
+                                                    fieldErrors.selection
+                                                        ? "border-[#F2C4C4] bg-[#FFF0F0]"
+                                                        : "border-[#E6DDF0]"
                                                 }`}
                                             />
                                             {fieldErrors.selection && (
@@ -1198,16 +1389,22 @@ export default function CustomerBookingPage() {
 
                                     {/* Event Date */}
                                     <div>
-                                        <label className="mb-3 block text-sm font-semibold text-gray-700">Event Date</label>
+                                        <label className="mb-3 block text-sm font-semibold text-[#1A1220]">
+                                            Event date
+                                        </label>
                                         <div className="relative">
-                                            <CalendarDays size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                                            <CalendarDays size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#806A8C]" />
                                             <input
                                                 type="date"
                                                 value={date}
                                                 onChange={(e) => { setDate(e.target.value); clearError("date"); }}
-                                                className={`w-full rounded-2xl border py-4 pl-12 pr-4 outline-none transition focus:border-purple-400 ${
-                                                    date ? "text-black" : "text-gray-400"
-                                                } ${fieldErrors.date ? "border-red-400 bg-red-50" : "border-gray-200"}`}
+                                                className={`h-[48px] w-full rounded-xl border bg-[#FFFDF8] pl-11 pr-3 text-sm outline-none transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10 ${
+                                                    date ? "text-[#1A1220]" : "text-[#9B8AAA]"
+                                                } ${
+                                                    fieldErrors.date
+                                                        ? "border-[#F2C4C4] bg-[#FFF0F0]"
+                                                        : "border-[#E6DDF0]"
+                                                }`}
                                             />
                                         </div>
                                         {fieldErrors.date && (
@@ -1217,15 +1414,19 @@ export default function CustomerBookingPage() {
 
                                     {/* Event Time */}
                                     <div>
-                                        <label className="mb-3 block text-sm font-semibold text-gray-700">Event Time</label>
+                                        <label className="mb-3 block text-sm font-semibold text-[#1A1220]">
+                                            Event time
+                                        </label>
                                         <input
                                             type="time"
                                             value={eventTime}
                                             onChange={(e) => { setEventTime(e.target.value); clearError("eventTime"); }}
                                             placeholder="--:--"
-                                            className={`w-full rounded-2xl border p-4 text-black outline-none transition focus:border-purple-400 ${
-                                                fieldErrors.eventTime ? "border-red-400 bg-red-50" : "border-gray-200"
-                                            } placeholder:text-gray-400`}
+                                            className={`h-[48px] w-full rounded-xl border bg-[#FFFDF8] px-3 text-sm text-[#1A1220] outline-none transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10 ${
+                                                fieldErrors.eventTime
+                                                    ? "border-[#F2C4C4] bg-[#FFF0F0]"
+                                                    : "border-[#E6DDF0]"
+                                            } placeholder:text-[#9B8AAA]`}
                                         />
                                         {fieldErrors.eventTime && (
                                             <p className="mt-1.5 text-xs font-medium text-red-500">{fieldErrors.eventTime}</p>
@@ -1254,79 +1455,163 @@ export default function CustomerBookingPage() {
 
                                 {/* Theme */}
                                 <div className="mt-6">
-                                    <label className="mb-3 block text-sm font-semibold text-gray-700">Theme / Motif Request</label>
+                                    <label className="mb-3 block text-sm font-semibold text-[#1A1220]">
+                                        Theme / motif request
+                                    </label>
                                     <textarea
                                         value={theme}
                                         onChange={(e) => { setTheme(e.target.value); clearError("theme"); }}
                                         placeholder="Example: pastel pink, safari, princess, floral, minimalist, blue and gold..."
-                                        className={`min-h-[120px] w-full resize-none rounded-2xl border p-4 outline-none transition focus:border-purple-400 ${
-                                            theme ? "text-black" : "text-gray-400"
-                                        } ${fieldErrors.theme ? "border-red-400 bg-red-50" : "border-gray-200"}`}
+                                        className={`min-h-[118px] w-full resize-none rounded-xl border bg-[#FFFDF8] p-3 text-sm outline-none transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10 ${
+                                            theme ? "text-[#1A1220]" : "text-[#9B8AAA]"
+                                        } ${
+                                            fieldErrors.theme
+                                                ? "border-[#F2C4C4] bg-[#FFF0F0]"
+                                                : "border-[#E6DDF0]"
+                                        }`}
                                     />
                                     {fieldErrors.theme && (
                                         <p className="mt-1.5 text-xs font-medium text-red-500">{fieldErrors.theme}</p>
                                     )}
-                                    <p className="mt-2 text-xs text-gray-500">
+                                    <p className="mt-2 text-xs leading-5 text-[#7A6A84]">
                                         You may request any theme, color motif, or design inspiration. Final design can be confirmed with the store.
                                     </p>
                                 </div>
 
                                 {/* Notes */}
                                 <div className="mt-6">
-                                    <label className="mb-3 block text-sm font-semibold text-gray-700">Additional Notes</label>
+                                    <label className="mb-3 block text-sm font-semibold text-[#1A1220]">
+                                        Additional notes
+                                    </label>
                                     <textarea
                                         value={notes}
                                         onChange={(e) => setNotes(e.target.value)}
                                         placeholder="Additional requests, backdrop text, celebrant name, age, delivery notes..."
-                                        className={`min-h-[120px] w-full resize-none rounded-2xl border p-4 outline-none transition focus:border-purple-400 ${
-                                            notes ? "text-black" : "text-gray-400"
+                                        className={`min-h-[118px] w-full resize-none rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] p-3 text-sm outline-none transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10 ${
+                                            notes ? "text-[#1A1220]" : "text-[#9B8AAA]"
                                         }`}
                                     />
                                 </div>
                             </div>
 
                             {/* Booking Summary Sidebar */}
-                            <div>
-                                <div className="sticky top-24 rounded-[28px] border border-purple-100 bg-gradient-to-br from-purple-50 to-pink-50 p-6">
-                                    <h3 className="text-2xl font-bold text-[#1f2a44]">Booking Summary</h3>
-                                    <div className="mt-6 space-y-5">
-                                        <SummaryItem label="Booking Type" value={bookingType === "package" ? "Package Booking" : "Custom Request"} />
-                                        {selectedPackage && <SummaryItem label="Package" value={selectedPackage} />}
-                                        {customOrder && bookingType === "custom" && <SummaryItem label="Custom Request" value={customOrder} />}
-                                        {name && <SummaryItem label="Customer" value={name} />}
-                                        {facebookName && <SummaryItem label="Messenger Name" value={facebookName} />}
-                                        {bookingType === "custom" && eventType && <SummaryItem label="Event Type" value={eventType} />}
-                                        {theme && <SummaryItem label="Theme / Motif" value={theme} />}
-                                        {venue && <SummaryItem label="Venue" value={venue} />}
-                                        {date && <SummaryItem label="Date" value={date} />}
-                                        {eventTime && <SummaryItem label="Event Time" value={eventTime} />}
-                                        <div className="border-t border-purple-100 pt-5">
-                                            <p className="text-sm font-semibold text-[#1f2a44]">After submission</p>
-                                            <p className="mt-2 text-xs leading-relaxed text-gray-500">
-                                                You will receive a booking reference number. Use the{" "}
-                                                <span className="font-semibold text-purple-700">Check booking status</span>{" "}
-                                                button at the top to track your booking anytime.
-                                            </p>
-                                        </div>
+                            <aside>
+                                <div className="sticky top-24 overflow-hidden rounded-[18px] border border-[#E6DDF0] bg-white shadow-sm">
+                                    <div className="bg-[#2B174C] px-5 py-5 text-white">
+                                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/70">
+                                            Your request
+                                        </p>
+                                        <h3 className="mt-1 text-[22px] font-bold">
+                                            Booking summary
+                                        </h3>
+                                        <p className="mt-2 text-sm leading-5 text-white/75">
+                                            Review your event details before submitting.
+                                        </p>
                                     </div>
 
-                                    <a
-                                        href={`https://m.me/${STORE_MESSENGER}`}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="mt-8 block w-full rounded-2xl border border-purple-200 bg-white py-3 text-center font-semibold text-purple-700 transition hover:bg-purple-100"
-                                    >
-                                        Continue on Messenger
-                                    </a>
-                                    <button
-                                        onClick={handleSubmit}
-                                        disabled={submitting}
-                                        className="mt-4 w-full rounded-2xl bg-gradient-to-r from-purple-600 to-pink-500 py-4 text-sm font-semibold text-white shadow-lg shadow-purple-200 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                                    >
-                                        {submitting ? "Submitting..." : "Submit Booking Request"}
-                                    </button>
+                                    <div className="p-5">
+                                        <div className="space-y-4">
+                                            <SummaryItem
+                                                label="Booking type"
+                                                value={
+                                                    bookingType === "package"
+                                                        ? "Package booking"
+                                                        : "Custom request"
+                                                }
+                                            />
+                                            {selectedPackage && (
+                                                <SummaryItem
+                                                    label="Package"
+                                                    value={selectedPackage}
+                                                />
+                                            )}
+                                            {customOrder &&
+                                                bookingType === "custom" && (
+                                                    <SummaryItem
+                                                        label="Custom request"
+                                                        value={customOrder}
+                                                    />
+                                                )}
+                                            {name && (
+                                                <SummaryItem
+                                                    label="Customer"
+                                                    value={name}
+                                                />
+                                            )}
+                                            {facebookName && (
+                                                <SummaryItem
+                                                    label="Messenger name"
+                                                    value={facebookName}
+                                                />
+                                            )}
+                                            {bookingType === "custom" &&
+                                                eventType && (
+                                                    <SummaryItem
+                                                        label="Event type"
+                                                        value={eventType}
+                                                    />
+                                                )}
+                                            {theme && (
+                                                <SummaryItem
+                                                    label="Theme / motif"
+                                                    value={theme}
+                                                />
+                                            )}
+                                            {venue && (
+                                                <SummaryItem
+                                                    label="Venue"
+                                                    value={venue}
+                                                />
+                                            )}
+                                            {date && (
+                                                <SummaryItem
+                                                    label="Date"
+                                                    value={date}
+                                                />
+                                            )}
+                                            {eventTime && (
+                                                <SummaryItem
+                                                    label="Event time"
+                                                    value={eventTime}
+                                                />
+                                            )}
+                                        </div>
+
+                                        <div className="mt-5 rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] p-3">
+                                            <p className="text-xs font-semibold text-[#1A1220]">
+                                                After submission
+                                            </p>
+                                            <p className="mt-1 text-xs leading-5 text-[#7A6A84]">
+                                                Save your booking reference number, then use{" "}
+                                                <span className="font-semibold text-[#2B174C]">
+                                                    Track booking
+                                                </span>{" "}
+                                                to check the status anytime.
+                                            </p>
+                                        </div>
+
+                                        <a
+                                            href={`https://m.me/${STORE_MESSENGER}`}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="mt-5 inline-flex h-[42px] w-full items-center justify-center rounded-xl border border-[#D8CBE7] bg-white px-4 text-sm font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF]"
+                                        >
+                                            Continue on Messenger
+                                        </a>
+
+                                        <button
+                                            type="button"
+                                            onClick={handleSubmit}
+                                            disabled={submitting}
+                                            className="mt-3 inline-flex h-[46px] w-full items-center justify-center rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            {submitting
+                                                ? "Submitting..."
+                                                : "Submit booking request"}
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            </aside>
                         </div>
                     )}
                 </div>
@@ -1334,44 +1619,79 @@ export default function CustomerBookingPage() {
 
             {/* ── Package Details Modal ── */}
             {detailsPackage && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4">
-                    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-[28px] bg-white p-6 shadow-2xl">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
+                    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-[20px] border border-[#E6DDF0] bg-white p-5 shadow-2xl sm:p-6">
                         <div className="flex items-start justify-between gap-4">
                             <div>
-                                <h2 className="text-2xl font-bold text-[#1f2a44]">{detailsPackage.name}</h2>
-                                <p className="mt-2 text-3xl font-bold text-purple-600">{peso(detailsPackage.package_price)}</p>
+                                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#806A8C]">
+                                    Package details
+                                </p>
+                                <h2 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-[#1A1220]">
+                                    {detailsPackage.name}
+                                </h2>
+                                <p className="mt-2 text-[26px] font-bold text-[#2B174C]">
+                                    {peso(detailsPackage.package_price)}
+                                </p>
                             </div>
-                            <button onClick={() => setDetailsPackage(null)} className="rounded-full bg-gray-100 p-2 text-gray-600 hover:bg-gray-200">
-                                <X size={20} />
+                            <button
+                                type="button"
+                                onClick={() => setDetailsPackage(null)}
+                                className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E6DDF0] bg-white text-[#806A8C] transition hover:bg-[#F7F1FF] hover:text-[#2B174C]"
+                                aria-label="Close package details"
+                            >
+                                <X size={18} />
                             </button>
                         </div>
-                        <p className="mt-5 text-sm leading-relaxed text-gray-600">{detailsPackage.description || "No description provided."}</p>
-                        <div className="mt-6 rounded-2xl bg-gray-50 p-4 text-sm text-gray-600">
-                            <span className="font-semibold text-[#1f2a44]">Duration:</span> {detailsPackage.duration || "Not set"}
+                        <p className="mt-5 text-sm leading-6 text-[#7A6A84]">
+                            {detailsPackage.description || "No description provided."}
+                        </p>
+
+                        <div className="mt-5 rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-4 py-3 text-sm text-[#5F4E75]">
+                            <span className="font-semibold text-[#1A1220]">Duration:</span>{" "}
+                            {detailsPackage.duration || "Not set"}
                         </div>
-                        <div className="mt-7">
-                            <h3 className="mb-4 text-lg font-bold text-[#1f2a44]">Package Inclusions</h3>
+
+                        <div className="mt-6">
+                            <h3 className="text-[16px] font-bold text-[#1A1220]">
+                                Package inclusions
+                            </h3>
                             {detailsPackage.inclusions.length === 0 ? (
-                                <p className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-500">No inclusions listed.</p>
+                                <p className="mt-3 rounded-xl border border-dashed border-[#E6DDF0] bg-[#FFFDF8] p-4 text-sm text-[#7A6A84]">
+                                    No inclusions listed.
+                                </p>
                             ) : (
-                                <div className="space-y-3">
+                                <div className="mt-3 space-y-2">
                                     {detailsPackage.inclusions.map((item) => (
-                                        <div key={item.productId} className="rounded-2xl border border-gray-200 p-4">
-                                            <p className="font-semibold text-[#1f2a44]">{item.productName}</p>
-                                            <p className="mt-1 text-sm text-gray-500">Included quantity: {item.quantity}</p>
+                                        <div
+                                            key={item.productId}
+                                            className="flex items-center justify-between gap-4 rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-4 py-3"
+                                        >
+                                            <p className="text-sm font-semibold text-[#1A1220]">
+                                                {item.productName}
+                                            </p>
+                                            <p className="shrink-0 text-xs font-semibold text-[#4E2C66]">
+                                                × {item.quantity}
+                                            </p>
                                         </div>
                                     ))}
                                 </div>
                             )}
                         </div>
-                        <p className="mt-6 rounded-2xl bg-purple-50 p-4 text-sm text-gray-600">
-                            Theme and color motif are customizable per booking. Please include your preferred theme in the booking form.
+
+                        <p className="mt-6 rounded-xl border border-[#D8CBE7] bg-[#F7F1FF] p-4 text-sm leading-6 text-[#5F4E75]">
+                            Themes and color motifs are customizable. Add your preferred
+                            design direction in the booking form.
                         </p>
+
                         <button
-                            onClick={() => { handleSelectPackage(detailsPackage); setDetailsPackage(null); }}
-                            className="mt-8 w-full rounded-2xl bg-purple-600 py-4 font-semibold text-white hover:bg-purple-700"
+                            type="button"
+                            onClick={() => {
+                                handleSelectPackage(detailsPackage);
+                                setDetailsPackage(null);
+                            }}
+                            className="mt-6 inline-flex h-[46px] w-full items-center justify-center rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31]"
                         >
-                            Select This Package
+                            Select this package
                         </button>
                     </div>
                 </div>
@@ -1382,30 +1702,52 @@ export default function CustomerBookingPage() {
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
-function Input({ label, value, onChange, placeholder, error }: {
-    label: string; value: string; onChange: (v: string) => void; placeholder?: string; error?: string;
+function Input({
+                   label,
+                   value,
+                   onChange,
+                   placeholder,
+                   error,
+               }: {
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+    placeholder?: string;
+    error?: string;
 }) {
     return (
         <div>
-            <label className="mb-3 block text-sm font-semibold text-gray-700">{label}</label>
+            <label className="mb-3 block text-sm font-semibold text-[#1A1220]">
+                {label}
+            </label>
             <input
                 value={value}
-                onChange={(e) => onChange(e.target.value)}
+                onChange={(event) => onChange(event.target.value)}
                 placeholder={placeholder}
-                className={`w-full rounded-2xl border p-4 text-black outline-none transition focus:border-purple-400 ${
-                    error ? "border-red-400 bg-red-50" : "border-gray-200"
+                className={`h-[48px] w-full rounded-xl border bg-[#FFFDF8] px-3 text-sm text-[#1A1220] outline-none placeholder:text-[#9B8AAA] transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10 ${
+                    error
+                        ? "border-[#F2C4C4] bg-[#FFF0F0]"
+                        : "border-[#E6DDF0]"
                 }`}
             />
-            {error && <p className="mt-1.5 text-xs font-medium text-red-500">{error}</p>}
+            {error && (
+                <p className="mt-1.5 text-xs font-medium text-[#C32F2F]">
+                    {error}
+                </p>
+            )}
         </div>
     );
 }
 
 function SummaryItem({ label, value }: { label: string; value: string }) {
     return (
-        <div className="flex items-start justify-between gap-5">
-            <span className="text-sm font-medium text-gray-500">{label}</span>
-            <span className="text-right text-sm font-semibold text-[#1f2a44]">{value}</span>
+        <div className="flex items-start justify-between gap-4">
+            <span className="shrink-0 text-xs font-medium text-[#806A8C]">
+                {label}
+            </span>
+            <span className="max-w-[62%] text-right text-sm font-semibold leading-5 text-[#1A1220]">
+                {value}
+            </span>
         </div>
     );
 }

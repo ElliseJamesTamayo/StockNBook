@@ -1,9 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RoleSidebar from "@/components/sidebar/RoleSidebar";
 import RequirePermission from "@/components/permissions/RequirePermission";
 import { QRCodeCanvas } from "qrcode.react";
+import {
+    Check,
+    Copy,
+    CreditCard,
+    Download,
+    ExternalLink,
+    Link2,
+    QrCode,
+    RefreshCw,
+    Save,
+    Store,
+} from "lucide-react";
 
 function makeSlug(value: string) {
     return value
@@ -14,6 +26,24 @@ function makeSlug(value: string) {
         .replace(/-+/g, "-");
 }
 
+function formatCurrentDateTime(value: Date) {
+    const dateLabel = value.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+    });
+
+    const timeLabel = value
+        .toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+        })
+        .toLowerCase();
+
+    return `${dateLabel} | ${timeLabel}`;
+}
+
 export default function SettingsPage() {
     const [mounted, setMounted] = useState(false);
     const [storeName, setStoreName] = useState("Store Name");
@@ -22,64 +52,114 @@ export default function SettingsPage() {
     const [branchId, setBranchId] = useState("");
     const [branchName, setBranchName] = useState("");
     const [copied, setCopied] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [currentDateTime, setCurrentDateTime] = useState<Date | null>(null);
+
+    const qrContainerRef = useRef<HTMLDivElement>(null);
 
     const isOwner = role === "owner";
 
+    const loadSettings = useCallback(() => {
+        const savedStoreName =
+            sessionStorage.getItem("store_name") ||
+            sessionStorage.getItem("stocknbook_store_name") ||
+            "Store Name";
+
+        const savedSlug =
+            sessionStorage.getItem("store_slug") ||
+            sessionStorage.getItem("slug");
+
+        const savedRole = (sessionStorage.getItem("role") || "").toLowerCase();
+
+        const savedBranchId =
+            sessionStorage.getItem("branch_id") ||
+            sessionStorage.getItem("stocknbook_branch_id") ||
+            "";
+
+        const savedBranchName =
+            sessionStorage.getItem("branch_name") ||
+            sessionStorage.getItem("stocknbook_branch_name") ||
+            "";
+
+        const generatedSlug = savedSlug || makeSlug(savedStoreName);
+
+        if (generatedSlug && !savedSlug) {
+            sessionStorage.setItem("store_slug", generatedSlug);
+        }
+
+        setStoreName(savedStoreName);
+        setStoreSlug(generatedSlug);
+        setRole(savedRole);
+        setBranchId(savedBranchId);
+        setBranchName(savedBranchName);
+        setMounted(true);
+    }, []);
+
     useEffect(() => {
-        const frame = window.requestAnimationFrame(() => {
-            const savedStoreName =
-                sessionStorage.getItem("store_name") ||
-                sessionStorage.getItem("stocknbook_store_name") ||
-                "Store Name";
-
-            const savedSlug =
-                sessionStorage.getItem("store_slug") ||
-                sessionStorage.getItem("slug");
-
-            const savedRole = (sessionStorage.getItem("role") || "").toLowerCase();
-
-            const savedBranchId =
-                sessionStorage.getItem("branch_id") ||
-                sessionStorage.getItem("stocknbook_branch_id") ||
-                "";
-
-            const savedBranchName =
-                sessionStorage.getItem("branch_name") ||
-                sessionStorage.getItem("stocknbook_branch_name") ||
-                "";
-
-            const generatedSlug = savedSlug ? savedSlug : makeSlug(savedStoreName);
-
-            if (generatedSlug && !savedSlug) {
-                sessionStorage.setItem("store_slug", generatedSlug);
-            }
-
-            setStoreName(savedStoreName);
-            setStoreSlug(generatedSlug);
-            setRole(savedRole);
-            setBranchId(savedBranchId);
-            setBranchName(savedBranchName);
-            setMounted(true);
-        });
+        const frame = window.requestAnimationFrame(loadSettings);
 
         return () => window.cancelAnimationFrame(frame);
+    }, [loadSettings]);
+
+    useEffect(() => {
+        const updateDateTime = () => setCurrentDateTime(new Date());
+
+        updateDateTime();
+        const timer = window.setInterval(updateDateTime, 30_000);
+
+        return () => window.clearInterval(timer);
     }, []);
 
     const branchSlug = useMemo(() => {
-        if (!branchName) return "";
-        return makeSlug(branchName);
+        return branchName ? makeSlug(branchName) : "";
     }, [branchName]);
 
     const bookingLink = useMemo(() => {
         if (!storeSlug || !mounted) return "";
 
-        // Manager/staff get a branch-specific booking link
         if ((role === "manager" || role === "staff") && branchId) {
             return `${window.location.origin}/book/${storeSlug}?branchId=${branchId}`;
         }
 
         return "";
-    }, [storeSlug, mounted, role, branchId]);
+    }, [branchId, mounted, role, storeSlug]);
+
+    const handleRefresh = () => {
+        setIsRefreshing(true);
+        loadSettings();
+
+        window.setTimeout(() => {
+            setIsRefreshing(false);
+        }, 250);
+    };
+
+    const handleSave = () => {
+        const cleanedName = storeName.trim();
+        const cleanedSlug = makeSlug(storeSlug || cleanedName);
+
+        if (!cleanedName || !cleanedSlug) {
+            alert("Please enter a business name and store slug.");
+            return;
+        }
+
+        setIsSaving(true);
+
+        sessionStorage.setItem("store_name", cleanedName);
+        sessionStorage.setItem("stocknbook_store_name", cleanedName);
+        sessionStorage.setItem("store_slug", cleanedSlug);
+        sessionStorage.setItem("slug", cleanedSlug);
+
+        setStoreName(cleanedName);
+        setStoreSlug(cleanedSlug);
+        setSaved(true);
+
+        window.setTimeout(() => {
+            setSaved(false);
+            setIsSaving(false);
+        }, 900);
+    };
 
     const handleCopy = async () => {
         if (!bookingLink) return;
@@ -87,27 +167,30 @@ export default function SettingsPage() {
         try {
             await navigator.clipboard.writeText(bookingLink);
             setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
+
+            window.setTimeout(() => setCopied(false), 2000);
         } catch (error) {
             console.error("Copy failed:", error);
-            alert("Failed to copy link.");
+            alert("Failed to copy the booking link.");
         }
     };
 
     const downloadQR = () => {
-        const canvas = document.querySelector("canvas") as HTMLCanvasElement | null;
+        const canvas =
+            qrContainerRef.current?.querySelector<HTMLCanvasElement>("canvas");
+
         if (!canvas) return;
 
-        const url = canvas.toDataURL("image/png");
         const link = document.createElement("a");
-        link.href = url;
-        link.download = "booking-qr.png";
+        link.href = canvas.toDataURL("image/png");
+        link.download = `${branchSlug || "booking"}-qr.png`;
         link.click();
     };
 
     const handlePreview = () => {
         if (!bookingLink) return;
-        window.open(bookingLink, "_blank");
+
+        window.open(bookingLink, "_blank", "noopener,noreferrer");
     };
 
     if (!mounted) {
@@ -116,304 +199,448 @@ export default function SettingsPage() {
 
     return (
         <RequirePermission>
-            <div className="flex min-h-screen bg-[#f5f6f8]">
+            <div
+                className="flex min-h-screen font-sans text-[#1A1220]"
+                style={{ backgroundColor: "#FDFAF4" }}
+            >
                 <RoleSidebar />
 
-                <main className="flex-1 p-6">
-                    <div className="mb-6">
-                        <p className="text-xl font-semibold text-[#1f2a44]">Settings</p>
-                        <p className="text-sm text-gray-500">
-                            {isOwner
-                                ? "Manage your business information and billing."
-                                : "View business information and branch booking details."}
-                        </p>
-                    </div>
+                <main className="min-w-0 flex-1 overflow-y-auto">
+                    <header className="sticky top-0 z-20 border-b border-[#E9E0EF] bg-[#FFFDF8]/95 backdrop-blur">
+                        <div className="flex min-h-[72px] flex-wrap items-center justify-between gap-4 px-6 py-3">
+                            <h1 className="text-[25px] font-bold text-[#1A1220]">
+                                Settings
+                            </h1>
 
-                    {/* ─── OWNER LAYOUT ─────────────────────────────────────── */}
-                    {isOwner && (
-                        <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-                            {/* Business Information Section (Owner Only - Editable) */}
-                            <section className="rounded-2xl bg-white p-6 shadow-sm">
-                                <div className="mb-5 flex items-start gap-3">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-100 text-lg text-purple-600">
-                                        🏪
-                                    </div>
-
-                                    <div>
-                                        <h2 className="text-sm font-semibold text-[#1f2a44]">
-                                            Business Information
-                                        </h2>
-                                        <p className="mt-1 text-xs text-gray-500">
-                                            Edit your business details. These are used across your booking page and operations.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="mb-2 block text-xs font-medium text-gray-500">
-                                            Business Name
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={storeName}
-                                            onChange={(e) => setStoreName(e.target.value)}
-                                            placeholder="Enter your business name"
-                                            className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="mb-2 block text-xs font-medium text-gray-500">
-                                            Store Slug
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={storeSlug}
-                                            onChange={(e) => setStoreSlug(e.target.value)}
-                                            placeholder="store-slug"
-                                            className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
-                                        />
-                                        <p className="mt-1 text-xs text-gray-400">
-                                            Used in your booking page URL
-                                        </p>
-                                    </div>
-
-                                    <button className="w-full rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-700">
-                                        Save Changes
-                                    </button>
-                                </div>
-                            </section>
-
-                            {/* Subscription / Billing Section (Owner Only) */}
-                            <section className="rounded-2xl bg-white p-6 shadow-sm">
-                                <div className="mb-5 flex items-start gap-3">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-lg text-blue-600">
-                                        💳
-                                    </div>
-
-                                    <div>
-                                        <h2 className="text-sm font-semibold text-[#1f2a44]">
-                                            Subscription / Billing
-                                        </h2>
-                                        <p className="mt-1 text-xs text-gray-500">
-                                            Manage your plan and billing information.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <div className="rounded-xl bg-blue-50 p-4">
-                                        <p className="text-xs font-semibold text-blue-900">Current Plan</p>
-                                        <p className="mt-1 text-sm font-bold text-blue-600">Pro Plan</p>
-                                        <p className="mt-1 text-xs text-blue-700">₱2,999/month</p>
-                                    </div>
-
-                                    <button className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 transition hover:bg-gray-50">
-                                        Manage Subscription
-                                    </button>
-
-                                    <button className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 transition hover:bg-gray-50">
-                                        View Invoices
-                                    </button>
-                                </div>
-                            </section>
-                        </div>
-                    )}
-
-                    {/* ─── MANAGER / STAFF LAYOUT ─────────────────────────────── */}
-                    {!isOwner && (
-                        <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-                            {/* Business Information Section (Read-only for Manager/Staff) */}
-                            <section className="rounded-2xl bg-white p-6 shadow-sm">
-                                <div className="mb-5 flex items-start gap-3">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-100 text-lg text-purple-600">
-                                        🏪
-                                    </div>
-
-                                    <div>
-                                        <h2 className="text-sm font-semibold text-[#1f2a44]">
-                                            Business Information
-                                        </h2>
-                                        <p className="mt-1 text-xs text-gray-500">
-                                            Read-only business details from the owner.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="mb-2 block text-xs font-medium text-gray-500">
-                                            Business Name
-                                        </label>
-                                        <input
-                                            readOnly
-                                            value={storeName}
-                                            className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 outline-none"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="mb-2 block text-xs font-medium text-gray-500">
-                                            Store Slug
-                                        </label>
-                                        <input
-                                            readOnly
-                                            value={storeSlug}
-                                            className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 outline-none"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="mb-2 block text-xs font-medium text-gray-500">
-                                            Your Branch
-                                        </label>
-                                        <input
-                                            readOnly
-                                            value={branchName || "Assigned Branch"}
-                                            className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 outline-none"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="mb-2 block text-xs font-medium text-gray-500">
-                                            Branch Slug
-                                        </label>
-                                        <input
-                                            readOnly
-                                            value={branchSlug}
-                                            className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 outline-none"
-                                        />
-                                    </div>
-                                </div>
-                            </section>
-
-                            {/* Booking Link Section (Manager/Staff) */}
-                            <section className="rounded-2xl bg-white p-6 shadow-sm">
-                                <div className="mb-5 flex items-start gap-3">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-100 text-lg text-green-600">
-                                        🔗
-                                    </div>
-
-                                    <div>
-                                        <h2 className="text-sm font-semibold text-[#1f2a44]">
-                                            Booking Link
-                                        </h2>
-                                        <p className="mt-1 text-xs text-gray-500">
-                                            Share this link with customers so bookings go to your branch.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="rounded-xl border border-gray-200 bg-[#fafafa] px-4 py-3 text-xs text-gray-700 font-mono break-all">
-                                    {bookingLink || "No branch booking link available yet."}
-                                </div>
-
-                                {branchName && (
-                                    <p className="mt-3 text-xs text-gray-500">
-                                        Branch:{" "}
-                                        <span className="font-semibold text-[#1f2a44]">
-                                            {branchName}
-                                        </span>
-                                    </p>
-                                )}
-
-                                <div className="mt-4 flex flex-wrap gap-2">
-                                    <button
-                                        onClick={handleCopy}
-                                        disabled={!bookingLink}
-                                        className="rounded-lg bg-purple-500 px-4 py-2 text-xs font-medium text-white transition hover:bg-purple-600 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        {copied ? "Copied!" : "Copy Link"}
-                                    </button>
-
-                                    <button
-                                        onClick={handlePreview}
-                                        disabled={!bookingLink}
-                                        className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-medium text-[#1f2a44] transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        Preview
-                                    </button>
-                                </div>
-                            </section>
-                        </div>
-                    )}
-
-                    {/* ─── QR CODE & SHARING TIPS (Manager/Staff Only) ─────────── */}
-                    {!isOwner && (
-                        <div className="mt-5 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-                            {/* QR Code Section */}
-                            <section className="rounded-2xl bg-white p-6 shadow-sm">
-                                <h3 className="mb-3 text-sm font-semibold text-[#1f2a44]">
-                                    QR Code
-                                </h3>
-
-                                <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed border-gray-200 bg-[#fafafa]">
-                                    <div className="text-center">
-                                        {bookingLink ? (
-                                            <QRCodeCanvas value={bookingLink} size={140} />
-                                        ) : (
-                                            <p className="text-xs text-gray-400">
-                                                No link available
-                                            </p>
-                                        )}
-
-                                        <p className="mt-3 text-xs text-gray-500">
-                                            Scan to open your branch public booking page.
-                                        </p>
-                                    </div>
-                                </div>
+                            <div className="flex items-center gap-2.5">
+                                <span className="inline-flex h-[42px] items-center rounded-xl border border-[#E6DDF0] bg-white px-3.5 text-sm font-semibold text-[#2B174C] shadow-sm">
+                                    {currentDateTime
+                                        ? formatCurrentDateTime(currentDateTime)
+                                        : "Loading date..."}
+                                </span>
 
                                 <button
                                     type="button"
-                                    onClick={downloadQR}
-                                    disabled={!bookingLink}
-                                    className="mt-3 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-medium text-[#1f2a44] transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    onClick={handleRefresh}
+                                    disabled={isRefreshing}
+                                    aria-label="Refresh settings"
+                                    title="Refresh settings"
+                                    className="inline-flex h-[42px] items-center gap-2 rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-60"
                                 >
-                                    Download QR
+                                    <RefreshCw
+                                        size={16}
+                                        className={
+                                            isRefreshing ? "animate-spin" : ""
+                                        }
+                                    />
+                                    Refresh
                                 </button>
-                            </section>
-
-                            {/* Sharing Tips Section */}
-                            <section className="rounded-2xl bg-white p-6 shadow-sm">
-                                <h3 className="mb-3 text-sm font-semibold text-[#1f2a44]">
-                                    Sharing Tips
-                                </h3>
-
-                                <div className="space-y-3 text-sm text-gray-600">
-                                    <div className="rounded-xl bg-[#fafafa] px-4 py-3">
-                                        <p className="font-semibold text-gray-900">📱 Social Media</p>
-                                        <p className="mt-1 text-xs">
-                                            Add your branch booking link to your Facebook page bio or pinned post.
-                                        </p>
-                                    </div>
-
-                                    <div className="rounded-xl bg-[#fafafa] px-4 py-3">
-                                        <p className="font-semibold text-gray-900">💬 Direct Messages</p>
-                                        <p className="mt-1 text-xs">
-                                            Send the link directly to customers who inquire by chat or messenger.
-                                        </p>
-                                    </div>
-
-                                    <div className="rounded-xl bg-[#fafafa] px-4 py-3">
-                                        <p className="font-semibold text-gray-900">📸 QR Code</p>
-                                        <p className="mt-1 text-xs">
-                                            Use the QR code for walk-in customers or printed displays at your venue.
-                                        </p>
-                                    </div>
-
-                                    <div className="rounded-xl bg-[#fafafa] px-4 py-3">
-                                        <p className="font-semibold text-gray-900">✅ Preview First</p>
-                                        <p className="mt-1 text-xs">
-                                            Preview the page before sharing to ensure your branch link is correct.
-                                        </p>
-                                    </div>
-                                </div>
-                            </section>
+                            </div>
                         </div>
-                    )}
+                    </header>
+
+                    <section className="space-y-4 px-6 py-4">
+                        {isOwner ? (
+                            <OwnerSettings
+                                storeName={storeName}
+                                storeSlug={storeSlug}
+                                setStoreName={setStoreName}
+                                setStoreSlug={setStoreSlug}
+                                isSaving={isSaving}
+                                saved={saved}
+                                onSave={handleSave}
+                            />
+                        ) : (
+                            <BranchSettings
+                                storeName={storeName}
+                                storeSlug={storeSlug}
+                                branchName={branchName}
+                                branchSlug={branchSlug}
+                                bookingLink={bookingLink}
+                                copied={copied}
+                                qrContainerRef={qrContainerRef}
+                                onCopy={() => void handleCopy()}
+                                onPreview={handlePreview}
+                                onDownloadQR={downloadQR}
+                            />
+                        )}
+                    </section>
                 </main>
             </div>
         </RequirePermission>
+    );
+}
+
+function OwnerSettings({
+                           storeName,
+                           storeSlug,
+                           setStoreName,
+                           setStoreSlug,
+                           isSaving,
+                           saved,
+                           onSave,
+                       }: {
+    storeName: string;
+    storeSlug: string;
+    setStoreName: (value: string) => void;
+    setStoreSlug: (value: string) => void;
+    isSaving: boolean;
+    saved: boolean;
+    onSave: () => void;
+}) {
+    return (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+            <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm">
+                <SettingsCardHeading
+                    icon={<Store size={18} />}
+                    title="Business Information"
+                    detail="Update the business details used across your booking page and operations."
+                />
+
+                <div className="mt-5 space-y-4">
+                    <FieldLabel label="Business Name">
+                        <input
+                            type="text"
+                            value={storeName}
+                            onChange={(event) =>
+                                setStoreName(event.target.value)
+                            }
+                            placeholder="Enter your business name"
+                            className="h-[42px] w-full rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-3 text-sm text-[#1A1220] outline-none placeholder:text-[#9B8AAA] transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10"
+                        />
+                    </FieldLabel>
+
+                    <FieldLabel
+                        label="Store Slug"
+                        detail="Used in your public booking page URL."
+                    >
+                        <input
+                            type="text"
+                            value={storeSlug}
+                            onChange={(event) =>
+                                setStoreSlug(event.target.value)
+                            }
+                            placeholder="store-slug"
+                            className="h-[42px] w-full rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-3 text-sm text-[#1A1220] outline-none placeholder:text-[#9B8AAA] transition focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10"
+                        />
+                    </FieldLabel>
+
+                    <button
+                        type="button"
+                        onClick={onSave}
+                        disabled={isSaving}
+                        className="inline-flex h-[42px] w-full items-center justify-center gap-2 rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        {saved ? <Check size={16} /> : <Save size={16} />}
+                        {isSaving
+                            ? "Saving..."
+                            : saved
+                                ? "Saved"
+                                : "Save Changes"}
+                    </button>
+
+                    <p className="text-center text-xs text-[#7A6A84]">
+                        Changes are saved for your current signed-in session.
+                    </p>
+                </div>
+            </section>
+
+            <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm">
+                <SettingsCardHeading
+                    icon={<CreditCard size={18} />}
+                    title="Subscription & Billing"
+                    detail="Review your current plan and account billing options."
+                />
+
+                <div className="mt-5 space-y-3">
+                    <div className="rounded-xl border border-[#E6DDF0] bg-[#F7F1FF] p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#806A8C]">
+                            Current Plan
+                        </p>
+                        <p className="mt-2 text-[18px] font-bold text-[#1A1220]">
+                            Pro Plan
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-[#5F4E75]">
+                            ₱2,999 / month
+                        </p>
+                    </div>
+
+                    <BillingRow
+                        title="Manage Subscription"
+                        detail="Change or review your current plan."
+                    />
+                    <BillingRow
+                        title="View Invoices"
+                        detail="Review past billing records and receipts."
+                    />
+                </div>
+            </section>
+        </div>
+    );
+}
+
+function BranchSettings({
+                            storeName,
+                            storeSlug,
+                            branchName,
+                            branchSlug,
+                            bookingLink,
+                            copied,
+                            qrContainerRef,
+                            onCopy,
+                            onPreview,
+                            onDownloadQR,
+                        }: {
+    storeName: string;
+    storeSlug: string;
+    branchName: string;
+    branchSlug: string;
+    bookingLink: string;
+    copied: boolean;
+    qrContainerRef: React.RefObject<HTMLDivElement | null>;
+    onCopy: () => void;
+    onPreview: () => void;
+    onDownloadQR: () => void;
+}) {
+    return (
+        <>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+                <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm">
+                    <SettingsCardHeading
+                        icon={<Store size={18} />}
+                        title="Business Information"
+                        detail="Business details provided by the store owner."
+                    />
+
+                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                        <ReadOnlyField
+                            label="Business Name"
+                            value={storeName}
+                        />
+                        <ReadOnlyField label="Store Slug" value={storeSlug} />
+                        <ReadOnlyField
+                            label="Assigned Branch"
+                            value={branchName || "Assigned Branch"}
+                        />
+                        <ReadOnlyField
+                            label="Branch Slug"
+                            value={branchSlug || "Not available"}
+                        />
+                    </div>
+                </section>
+
+                <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm">
+                    <SettingsCardHeading
+                        icon={<Link2 size={18} />}
+                        title="Branch Booking Link"
+                        detail="Share this link so bookings are sent directly to your branch."
+                    />
+
+                    <div className="mt-5 rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] p-3">
+                        <p className="break-all font-mono text-xs leading-5 text-[#4E2C66]">
+                            {bookingLink ||
+                                "No branch booking link available yet."}
+                        </p>
+                    </div>
+
+                    {branchName && (
+                        <p className="mt-3 text-xs text-[#7A6A84]">
+                            Booking destination:{" "}
+                            <span className="font-semibold text-[#1A1220]">
+                                {branchName}
+                            </span>
+                        </p>
+                    )}
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                        <button
+                            type="button"
+                            onClick={onCopy}
+                            disabled={!bookingLink}
+                            className="inline-flex h-[42px] items-center justify-center gap-2 rounded-xl bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1B0D31] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {copied ? <Check size={16} /> : <Copy size={16} />}
+                            {copied ? "Copied" : "Copy Link"}
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={onPreview}
+                            disabled={!bookingLink}
+                            className="inline-flex h-[42px] items-center justify-center gap-2 rounded-xl border border-[#E6DDF0] bg-white px-4 text-sm font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <ExternalLink size={16} />
+                            Preview
+                        </button>
+                    </div>
+                </section>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[minmax(290px,0.75fr)_minmax(0,1.25fr)]">
+                <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm">
+                    <SettingsCardHeading
+                        icon={<QrCode size={18} />}
+                        title="Branch QR Code"
+                        detail="Customers can scan this code to open your branch booking page."
+                    />
+
+                    <div
+                        ref={qrContainerRef}
+                        className="mt-5 flex min-h-[228px] items-center justify-center rounded-xl border border-dashed border-[#D8CBE7] bg-[#FFFDF8] p-5"
+                    >
+                        {bookingLink ? (
+                            <QRCodeCanvas value={bookingLink} size={148} />
+                        ) : (
+                            <p className="text-sm text-[#9B8AAA]">
+                                No booking link available.
+                            </p>
+                        )}
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={onDownloadQR}
+                        disabled={!bookingLink}
+                        className="mt-4 inline-flex h-[42px] w-full items-center justify-center gap-2 rounded-xl border border-[#E6DDF0] bg-white px-4 text-sm font-semibold text-[#2B174C] transition hover:bg-[#F7F1FF] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        <Download size={16} />
+                        Download QR
+                    </button>
+                </section>
+
+                <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-5 shadow-sm">
+                    <h2 className="text-[16px] font-bold text-[#1A1220]">
+                        Sharing Tips
+                    </h2>
+                    <p className="mt-1 text-xs text-[#7A6A84]">
+                        Simple ways to make your branch booking page easier for
+                        customers to find.
+                    </p>
+
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                        <TipCard
+                            number="01"
+                            title="Social Media"
+                            detail="Add the booking link to your Facebook page bio or pin it in a post."
+                        />
+                        <TipCard
+                            number="02"
+                            title="Direct Messages"
+                            detail="Send the link to customers who ask through chat or Messenger."
+                        />
+                        <TipCard
+                            number="03"
+                            title="QR Displays"
+                            detail="Place the QR code in your store or on printed event materials."
+                        />
+                        <TipCard
+                            number="04"
+                            title="Preview First"
+                            detail="Open the booking link before sharing to confirm the correct branch."
+                        />
+                    </div>
+                </section>
+            </div>
+        </>
+    );
+}
+
+function SettingsCardHeading({
+                                 icon,
+                                 title,
+                                 detail,
+                             }: {
+    icon: React.ReactNode;
+    title: string;
+    detail: string;
+}) {
+    return (
+        <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EFE8F8] text-[#4E2C66]">
+                {icon}
+            </div>
+
+            <div>
+                <h2 className="text-[16px] font-bold text-[#1A1220]">
+                    {title}
+                </h2>
+                <p className="mt-0.5 text-xs leading-5 text-[#7A6A84]">
+                    {detail}
+                </p>
+            </div>
+        </div>
+    );
+}
+
+function FieldLabel({
+                        label,
+                        detail,
+                        children,
+                    }: {
+    label: string;
+    detail?: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <div>
+            <label className="mb-2 block text-sm font-medium text-[#1A1220]">
+                {label}
+            </label>
+            {children}
+            {detail && (
+                <p className="mt-1.5 text-xs text-[#7A6A84]">{detail}</p>
+            )}
+        </div>
+    );
+}
+
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+    return (
+        <div>
+            <p className="mb-2 text-sm font-medium text-[#1A1220]">{label}</p>
+            <div
+                title={value}
+                className="flex h-[42px] items-center truncate rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] px-3 text-sm text-[#5F4E75]"
+            >
+                {value}
+            </div>
+        </div>
+    );
+}
+
+function BillingRow({ title, detail }: { title: string; detail: string }) {
+    return (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-[#E6DDF0] bg-white px-4 py-3">
+            <div>
+                <p className="text-sm font-semibold text-[#1A1220]">{title}</p>
+                <p className="mt-0.5 text-xs text-[#7A6A84]">{detail}</p>
+            </div>
+
+            <span className="shrink-0 rounded-lg border border-[#E6DDF0] bg-[#FFFDF8] px-2.5 py-1 text-xs font-semibold text-[#806A8C]">
+                Soon
+            </span>
+        </div>
+    );
+}
+
+function TipCard({
+                     number,
+                     title,
+                     detail,
+                 }: {
+    number: string;
+    title: string;
+    detail: string;
+}) {
+    return (
+        <div className="rounded-xl border border-[#E6DDF0] bg-[#FFFDF8] p-4">
+            <span className="text-xs font-bold tracking-[0.12em] text-[#806A8C]">
+                {number}
+            </span>
+            <p className="mt-2 text-sm font-semibold text-[#1A1220]">
+                {title}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-[#7A6A84]">{detail}</p>
+        </div>
     );
 }
