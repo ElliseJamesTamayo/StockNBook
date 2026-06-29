@@ -2,15 +2,20 @@
 
 import { ReportsWorkspace } from "./_shared";
 
+type OwnerReportsProps = {
+    assignedBranch: string;
+    storeName: string;
+};
+
 export default function OwnerReports({
                                          assignedBranch,
-                                     }: {
-    assignedBranch: string;
-}) {
+                                         storeName,
+                                     }: OwnerReportsProps) {
     return (
         <ReportsWorkspace
             initialRole="owner"
             assignedBranch={assignedBranch}
+            storeName={storeName}
         />
     );
 }

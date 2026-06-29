@@ -22,6 +22,8 @@ import {
     Package,
     RefreshCw,
     RotateCcw,
+    Search,
+    Store,
     TrendingUp,
     Users,
 } from "lucide-react";
@@ -44,6 +46,53 @@ type BookingStatus =
     | "preparing"
     | "cancelled"
     | "completed";
+
+type LiveApiRecord = Record<string, unknown>;
+
+type LiveProductsResponse = {
+    products?: unknown[];
+    error?: string;
+};
+
+type LiveInventoryLoadState = {
+    ready: boolean;
+    items: InventoryItem[];
+};
+
+type LiveBranchOption = {
+    id: string;
+    name: string;
+};
+
+type LiveBranchesResponse = {
+    branches?: unknown[];
+    error?: string;
+};
+
+type LiveSalesResponse = {
+    orders?: unknown[];
+    sales?: unknown[];
+    transactions?: unknown[];
+    data?: unknown;
+    error?: string;
+};
+
+type LiveSalesLoadState = {
+    ready: boolean;
+    items: SaleRecord[];
+};
+
+type LiveBookingsResponse = {
+    bookings?: unknown[];
+    records?: unknown[];
+    data?: unknown;
+    error?: string;
+};
+
+type LiveBookingsLoadState = {
+    ready: boolean;
+    items: BookingRecord[];
+};
 
 type InventoryVariant = {
     id: string;
@@ -90,6 +139,7 @@ type BookingRecord = {
     eventDate: string;
     scheduleTime?: string;
     branch: string;
+    branchId?: string;
     customer: string;
     phone?: string;
     venue?: string;
@@ -104,16 +154,39 @@ type BookingRecord = {
     notes?: string;
 };
 
+type RevenueSource = "pos" | "booking";
+
 type SaleRecord = {
     id: string;
     reference: string;
     date: string;
     branch: string;
+    branchId?: string;
     customer: string;
     product: string;
+    itemsText?: string;
     category: string;
     quantity: number;
     amount: number;
+    /*
+      Orders returned by /api/pos include both true POS orders and
+      booking-linked order records. Keep the source on every order so the
+      Report can place it in exactly one revenue column.
+    */
+    revenueSource: RevenueSource;
+    linkedBookingId?: string;
+    linkedBookingReference?: string;
+    statusLabel?: string;
+};
+
+type SalesSummaryRow = {
+    id: string;
+    source: "pos" | "booking";
+    date: string;
+    recordId: string;
+    posSales: number;
+    bookingRevenue: number;
+    totalRevenue: number;
 };
 
 type ForecastRecord = {
@@ -133,6 +206,7 @@ type SeasonalInsight = {
 };
 
 type SystemModule = "Bookings" | "Inventory" | "Packages" | "Sales / POS";
+type SalesView = "summary" | "pos" | "booking";
 type StaffModuleFilter = "all" | SystemModule;
 
 type StaffActivity = {
@@ -159,6 +233,10 @@ type BookingSummary = {
 
 type ReportData = {
     branch?: string;
+    storeName?: string;
+    store_name?: string;
+    businessName?: string;
+    business_name?: string;
     monthLabel?: string;
     dateRange?: {
         startDate: string;
@@ -201,8 +279,12 @@ type ExportTable = {
     rows: string[][];
 };
 
-const DEFAULT_BRANCH = "Makati Branch";
-const ALL_BRANCHES = "All branches";
+const DEFAULT_BRANCH = "Assigned Branch";
+const ALL_BRANCHES = "All Branches";
+
+function isAllBranches(value: string) {
+    return value.trim().toLowerCase() === "all branches";
+}
 
 const REPORT_CARDS: ReportCard[] = [
     {
@@ -299,6 +381,711 @@ function formatCurrentDateTime(value: Date) {
     return `${dateLabel} | ${timeLabel}`;
 }
 
+function getStoredSessionValue(keys: string[]) {
+    if (typeof window === "undefined") {
+        return "";
+    }
+
+    for (const key of keys) {
+        const value =
+            sessionStorage.getItem(key) ||
+            localStorage.getItem(key) ||
+            "";
+
+        if (value.trim()) {
+            return value.trim();
+        }
+    }
+
+    return "";
+}
+
+function asLiveRecord(value: unknown): LiveApiRecord {
+    return value && typeof value === "object"
+        ? (value as LiveApiRecord)
+        : {};
+}
+
+function asLiveNumber(value: unknown) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function asLiveText(...values: unknown[]) {
+    for (const value of values) {
+        const text = String(value ?? "").trim();
+
+        if (text) {
+            return text;
+        }
+    }
+
+    return "";
+}
+
+/*
+  API Gateway/Lambda responses can return records in different wrappers:
+  { orders: [] }, { bookings: [] }, { data: { orders: [] } }, or { data: [] }.
+  This keeps POS and Bookings separate even when the response wrapper changes.
+*/
+function getLiveCollection(
+    payload: unknown,
+    keys: string[]
+): unknown[] {
+    if (Array.isArray(payload)) {
+        return payload;
+    }
+
+    const direct = asLiveRecord(payload);
+
+    for (const key of keys) {
+        if (Array.isArray(direct[key])) {
+            return direct[key] as unknown[];
+        }
+    }
+
+    const nested = asLiveRecord(direct.data);
+
+    for (const key of keys) {
+        if (Array.isArray(nested[key])) {
+            return nested[key] as unknown[];
+        }
+    }
+
+    if (Array.isArray(direct.data)) {
+        return direct.data as unknown[];
+    }
+
+    return [];
+}
+
+/*
+  The POS endpoint reads the shared orders table. That table contains:
+  - POS receipts:      POS-... or <STORE>-POS-...
+  - booking order rows: DEMO-FC-W-SC-03, DEMO-FC-SIGN-01, etc.
+
+  Do not put every returned order in POS Sales. Use an explicit source field
+  when the API returns one; otherwise treat only POS-pattern IDs as POS.
+  Every other order ID belongs to Booking Revenue. This keeps the two database
+  sources separate in Total Revenue without grouping unrelated records.
+*/
+function getOrderRevenueSource(
+    rawValue: unknown,
+    orderId: string
+): RevenueSource {
+    const raw = asLiveRecord(rawValue);
+    const explicitSource = asLiveText(
+        raw.revenueSource,
+        raw.revenue_source,
+        raw.orderSource,
+        raw.order_source,
+        raw.orderType,
+        raw.order_type,
+        raw.transactionType,
+        raw.transaction_type,
+        raw.recordType,
+        raw.record_type,
+        raw.source,
+        raw.module
+    ).toLowerCase();
+
+    const hasLinkedBookingField = Boolean(
+        raw.bookingId ??
+        raw.booking_id ??
+        raw.bookingReference ??
+        raw.booking_reference ??
+        raw.booking_ref ??
+        raw.bookingRef
+    );
+
+    if (hasLinkedBookingField) {
+        return "booking";
+    }
+
+    const normalizedOrderId = String(orderId || "")
+        .trim()
+        .toUpperCase();
+
+    /*
+      Examples classified as POS:
+      POS-20260629-1782710218616
+      DEMO-POS-20260629
+      STELLISE-POS-20260629-02
+    */
+    if (
+        normalizedOrderId.startsWith("POS-") ||
+        normalizedOrderId.includes("-POS-") ||
+        normalizedOrderId.includes("_POS_")
+    ) {
+        return "pos";
+    }
+
+    if (
+        explicitSource.includes("booking") ||
+        explicitSource.includes("reservation") ||
+        explicitSource.includes("package")
+    ) {
+        return "booking";
+    }
+
+    if (explicitSource.includes("pos")) {
+        return "pos";
+    }
+
+    /*
+      Example classified as Booking Revenue:
+      DEMO-FC-W-SC-03
+
+      A non-POS order ID belongs to Booking Revenue. A generic "sales"
+      source value must not override this convention because both modules use
+      the same orders table.
+    */
+    return "booking";
+}
+
+function getBookingReportAmount(raw: LiveApiRecord) {
+    /*
+      The Bookings module can keep both agreed_price and package_price.
+      Some records initialize agreed_price to 0, so choose the first positive
+      booking amount rather than stopping at that placeholder zero.
+    */
+    const values = [
+        raw.agreed_price,
+        raw.agreedPrice,
+        raw.package_price,
+        raw.packagePrice,
+        raw.total_price,
+        raw.totalPrice,
+        raw.total_amount,
+        raw.totalAmount,
+        raw.amount,
+        raw.price,
+    ];
+
+    for (const value of values) {
+        const amount = asLiveNumber(value);
+
+        if (amount > 0) {
+            return amount;
+        }
+    }
+
+    return 0;
+}
+
+function getInventoryStatus(
+    stock: number,
+    reorderLevel: number
+): InventoryStatus {
+    if (stock <= 0) {
+        return "Out of Stock";
+    }
+
+    if (stock <= reorderLevel) {
+        return "Low Stock";
+    }
+
+    return "In Stock";
+}
+
+function getLiveVariantName(variant: LiveApiRecord, index: number) {
+    const directName = asLiveText(
+        variant.name,
+        variant.variantName,
+        variant.variant_name,
+        variant.label
+    );
+
+    if (directName) {
+        return directName;
+    }
+
+    const rawValues =
+        variant.variantValues ??
+        variant.variant_values ??
+        variant.values ??
+        {};
+
+    const values =
+        rawValues && typeof rawValues === "object"
+            ? Object.values(rawValues as Record<string, unknown>)
+                .map((value) => String(value ?? "").trim())
+                .filter(Boolean)
+            : [];
+
+    return values.join(", ") || `Variant ${index + 1}`;
+}
+
+function normalizeLiveInventoryProduct(
+    rawValue: unknown,
+    index: number,
+    fallbackBranch: string
+): InventoryItem {
+    const raw = asLiveRecord(rawValue);
+    const rawVariants = Array.isArray(raw.variants) ? raw.variants : [];
+    const productId = asLiveText(raw.id, raw.productId, raw.product_id) || `live-product-${index + 1}`;
+
+    const variants = rawVariants.map((rawVariant, variantIndex) => {
+        const variant = asLiveRecord(rawVariant);
+        const stock = asLiveNumber(variant.stock);
+        const reorderLevel = asLiveNumber(
+            variant.alertLevel ?? variant.alert_level ?? variant.reorderLevel ?? variant.reorder_level
+        );
+
+        return {
+            id:
+                asLiveText(variant.id, variant.variantId, variant.variant_id) ||
+                `${productId}-variant-${variantIndex + 1}`,
+            sku: asLiveText(variant.sku, variant.code) || undefined,
+            name: getLiveVariantName(variant, variantIndex),
+            stock,
+            reorderLevel,
+            costPrice: asLiveNumber(
+                variant.originalPrice ?? variant.original_price ?? variant.costPrice ?? variant.cost_price
+            ),
+            salesPrice: asLiveNumber(
+                variant.salesPrice ?? variant.sales_price ?? variant.price
+            ),
+            status: getInventoryStatus(stock, reorderLevel),
+        } satisfies InventoryVariant;
+    });
+
+    const hasVariants = Boolean(
+        raw.hasVariants ?? raw.has_variants ?? variants.length > 0
+    );
+
+    const stock = hasVariants && variants.length > 0
+        ? variants.reduce((total, variant) => total + variant.stock, 0)
+        : asLiveNumber(raw.stock);
+
+    const reorderLevel = hasVariants && variants.length > 0
+        ? variants.reduce(
+            (total, variant) => total + Number(variant.reorderLevel || 0),
+            0
+        )
+        : asLiveNumber(
+            raw.alertLevel ??
+            raw.alert_level ??
+            raw.reorderLevel ??
+            raw.reorder_level
+        );
+
+    const hasOutOfStockVariant = variants.some(
+        (variant) => variant.status === "Out of Stock"
+    );
+    const hasLowStockVariant = variants.some(
+        (variant) => variant.status === "Low Stock"
+    );
+
+    const status: InventoryStatus =
+        hasVariants && variants.length > 0
+            ? hasOutOfStockVariant
+                ? "Out of Stock"
+                : hasLowStockVariant
+                    ? "Low Stock"
+                    : "In Stock"
+            : getInventoryStatus(stock, reorderLevel);
+
+    return {
+        id: productId,
+        product: asLiveText(raw.name, raw.productName, raw.product_name) || "Unnamed Product",
+        category: asLiveText(raw.category, raw.categoryName, raw.category_name) || "Uncategorized",
+        branch:
+            asLiveText(raw.branchName, raw.branch_name, raw.branch) ||
+            fallbackBranch ||
+            "Assigned Branch",
+        stock,
+        reorderLevel,
+        status,
+        costPrice: asLiveNumber(
+            raw.originalPrice ?? raw.original_price ?? raw.costPrice ?? raw.cost_price
+        ),
+        salesPrice: asLiveNumber(
+            raw.salesPrice ?? raw.sales_price ?? raw.price
+        ),
+        variants: variants.length > 0 ? variants : undefined,
+    };
+}
+
+function toReportDateValue(value: unknown) {
+    const text = String(value ?? "").trim();
+
+    if (!text || text === "0000-00-00") {
+        return "";
+    }
+
+    const directMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+    if (directMatch) {
+        return `${directMatch[1]}-${directMatch[2]}-${directMatch[3]}`;
+    }
+
+    const parsed = new Date(text);
+
+    if (Number.isNaN(parsed.getTime())) {
+        return "";
+    }
+
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const day = String(parsed.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+}
+
+function isDateInSelectedRange(
+    dateValue: string,
+    startDate: string,
+    endDate: string
+) {
+    return Boolean(
+        dateValue &&
+        (!startDate || dateValue >= startDate) &&
+        (!endDate || dateValue <= endDate)
+    );
+}
+
+function getLiveOrderItemsText(raw: LiveApiRecord) {
+    const directItems = asLiveText(
+        raw.item,
+        raw.itemsText,
+        raw.items_text,
+        raw.orderItemsText,
+        raw.order_items_text
+    );
+
+    if (directItems) {
+        return directItems;
+    }
+
+    const rawItems = Array.isArray(raw.items)
+        ? raw.items
+        : Array.isArray(raw.order_items)
+            ? raw.order_items
+            : [];
+
+    const itemLabels = rawItems
+        .map((rawItem) => {
+            const item = asLiveRecord(rawItem);
+            const name =
+                asLiveText(
+                    item.name,
+                    item.itemName,
+                    item.item_name,
+                    item.productName,
+                    item.product_name
+                ) || "Item";
+            const quantity = asLiveNumber(item.quantity ?? item.qty);
+
+            return quantity > 0 ? `${name} × ${quantity}` : name;
+        })
+        .filter(Boolean);
+
+    return itemLabels.join(", ") || "No items recorded";
+}
+
+function normalizeLivePosOrder(
+    rawValue: unknown,
+    index: number,
+    fallbackBranch: string
+): SaleRecord {
+    const raw = asLiveRecord(rawValue);
+    const orderId =
+        asLiveText(
+            raw.orderId,
+            raw.order_id,
+            raw.id,
+            raw.reference,
+            raw.referenceNo,
+            raw.reference_no
+        ) || `POS-ORDER-${index + 1}`;
+    const date =
+        [
+            raw.orderDate,
+            raw.order_date,
+            raw.date,
+            raw.createdAt,
+            raw.created_at,
+            raw.transactionDate,
+            raw.transaction_date,
+        ]
+            .map((value) => toReportDateValue(value))
+            .find(Boolean) || "";
+    const itemText = getLiveOrderItemsText(raw);
+    const revenueSource = getOrderRevenueSource(raw, orderId);
+
+    return {
+        id: orderId,
+        reference: orderId,
+        date,
+        branch:
+            asLiveText(raw.branchName, raw.branch_name, raw.branch) ||
+            fallbackBranch ||
+            "Assigned Branch",
+        branchId: asLiveText(raw.branchId, raw.branch_id),
+        customer:
+            asLiveText(raw.customerName, raw.customer_name, raw.customer) ||
+            "-",
+        product: itemText,
+        itemsText: itemText,
+        category: asLiveText(raw.category, raw.categoryName, raw.category_name),
+        quantity: asLiveNumber(
+            raw.quantity ?? raw.totalQuantity ?? raw.total_quantity
+        ),
+        amount: asLiveNumber(
+            raw.total ?? raw.amount ?? raw.grandTotal ?? raw.grand_total
+        ),
+        revenueSource,
+        linkedBookingId:
+            asLiveText(raw.bookingId, raw.booking_id) || undefined,
+        linkedBookingReference:
+            asLiveText(
+                raw.bookingReference,
+                raw.booking_reference,
+                raw.booking_ref,
+                raw.bookingRef
+            ) || undefined,
+        statusLabel:
+            asLiveText(
+                raw.status,
+                raw.orderStatus,
+                raw.order_status,
+                raw.bookingStatus,
+                raw.booking_status
+            ) || undefined,
+    };
+}
+
+function normalizeLiveBookingStatus(value: unknown): BookingStatus {
+    const normalized = asLiveText(value).toLowerCase();
+
+    if (normalized === "canceled" || normalized === "cancelled") {
+        return "cancelled";
+    }
+
+    if (normalized.includes("complete")) {
+        return "completed";
+    }
+
+    if (normalized.includes("confirm")) {
+        return "confirmed";
+    }
+
+    if (normalized.includes("prepar")) {
+        return "preparing";
+    }
+
+    return "pending";
+}
+
+function normalizeLiveBooking(
+    rawValue: unknown,
+    index: number,
+    fallbackBranch: string
+): BookingRecord {
+    const raw = asLiveRecord(rawValue);
+    const id =
+        asLiveText(raw.id, raw.bookingId, raw.booking_id) ||
+        `BOOKING-${index + 1}`;
+    const reference =
+        asLiveText(
+            raw.bookingReference,
+            raw.booking_reference,
+            raw.reference,
+            raw.referenceNo,
+            raw.reference_no,
+            raw.referenceNumber,
+            raw.reference_number
+        ) || id;
+    const status = normalizeLiveBookingStatus(
+        raw.status ?? raw.bookingStatus ?? raw.booking_status
+    );
+    const statusLabel = asLiveText(
+        raw.statusLabel,
+        raw.status_label,
+        raw.status,
+        raw.bookingStatus,
+        raw.booking_status
+    );
+
+    /*
+      Use the completion date when it exists because this is a revenue report.
+      Fall back to updated/created/booking date for legacy records.
+    */
+    const date =
+        [
+            raw.completedAt,
+            raw.completed_at,
+            raw.updatedAt,
+            raw.updated_at,
+            raw.createdAt,
+            raw.created_at,
+            raw.bookingDate,
+            raw.booking_date,
+            raw.date,
+            raw.eventDate,
+            raw.event_date,
+        ]
+            .map((value) => toReportDateValue(value))
+            .find(Boolean) || "";
+
+    const eventDate =
+        [
+            raw.eventDate,
+            raw.event_date,
+            raw.scheduleDate,
+            raw.schedule_date,
+            raw.bookingDate,
+            raw.booking_date,
+            raw.date,
+        ]
+            .map((value) => toReportDateValue(value))
+            .find(Boolean) || date;
+
+    return {
+        id,
+        reference,
+        date,
+        eventDate,
+        scheduleTime:
+            asLiveText(
+                raw.scheduleTime,
+                raw.schedule_time,
+                raw.eventTime,
+                raw.event_time,
+                raw.time
+            ) || undefined,
+        branch:
+            asLiveText(raw.branchName, raw.branch_name, raw.branch) ||
+            fallbackBranch ||
+            "Assigned Branch",
+        branchId: asLiveText(raw.branchId, raw.branch_id) || undefined,
+        customer:
+            asLiveText(
+                raw.customerName,
+                raw.customer_name,
+                raw.customer,
+                raw.name,
+                raw.fullName,
+                raw.full_name,
+                raw.facebookName,
+                raw.facebook_name
+            ) || "Customer",
+        phone:
+            asLiveText(raw.phone, raw.contactNumber, raw.contact_number) ||
+            undefined,
+        venue:
+            asLiveText(
+                raw.venue,
+                raw.location,
+                raw.eventVenue,
+                raw.event_venue
+            ) || undefined,
+        packageName:
+            asLiveText(
+                raw.package,
+                raw.packageName,
+                raw.package_name,
+                raw.packageTitle,
+                raw.package_title,
+                raw.serviceName,
+                raw.service_name,
+                raw.customOrder,
+                raw.custom_order
+            ) || "Custom booking",
+        status,
+        statusLabel:
+            statusLabel ||
+            `${status.charAt(0).toUpperCase()}${status.slice(1)}`,
+        amount: getBookingReportAmount(raw),
+        amountPaid:
+            asLiveNumber(
+                raw.amount_paid ??
+                raw.amountPaid ??
+                raw.paid_amount ??
+                raw.paidAmount
+            ) || undefined,
+        requiredDownPayment:
+            asLiveNumber(
+                raw.required_down_payment ??
+                raw.requiredDownPayment ??
+                raw.down_payment_amount ??
+                raw.downPaymentAmount
+            ) || undefined,
+        balance:
+            asLiveNumber(
+                raw.balance ?? raw.remainingBalance ?? raw.remaining_balance
+            ) || undefined,
+        paymentStatus:
+            asLiveText(
+                raw.payment_status,
+                raw.paymentStatus,
+                raw.payment
+            ) || undefined,
+        notes: asLiveText(raw.notes, raw.note) || undefined,
+    };
+}
+
+function getSaleItemsLabel(sale: SaleRecord) {
+    const directItems = String(sale.itemsText ?? "").trim();
+
+    if (directItems) {
+        return directItems;
+    }
+
+    return sale.quantity > 0
+        ? `${sale.product} × ${formatNumber(sale.quantity)}`
+        : sale.product || "No items recorded";
+}
+
+function normalizeRevenueRecordKey(value: unknown) {
+    return String(value ?? "")
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "");
+}
+
+function resolveBookingRevenueStatus(
+    order: SaleRecord,
+    bookings: BookingRecord[]
+) {
+    if (String(order.statusLabel || "").trim()) {
+        return String(order.statusLabel).trim();
+    }
+
+    const orderKeys = new Set(
+        [
+            order.id,
+            order.reference,
+            order.linkedBookingId,
+            order.linkedBookingReference,
+        ]
+            .map(normalizeRevenueRecordKey)
+            .filter(Boolean)
+    );
+
+    const linkedBooking = bookings.find((booking) => {
+        const bookingIdKey = normalizeRevenueRecordKey(booking.id);
+        const bookingReferenceKey = normalizeRevenueRecordKey(booking.reference);
+
+        return (
+            orderKeys.has(bookingIdKey) ||
+            orderKeys.has(bookingReferenceKey)
+        );
+    });
+
+    if (linkedBooking?.statusLabel) {
+        return linkedBooking.statusLabel;
+    }
+
+    /*
+      The record is already classified as booking revenue, not POS. When the
+      legacy orders table does not return a booking status/link, show Completed
+      instead of a blank status because this row is being counted as booking
+      revenue in the report.
+    */
+    return "Completed";
+}
 
 function sumBy<T>(items: T[], callback: (item: T) => number) {
     return items.reduce((total, item) => total + callback(item), 0);
@@ -472,12 +1259,14 @@ function wrapPdfText(value: string, maxCharacters: number, maxLines = 3) {
 
 function createTablePdf({
                             title,
+                            storeName,
                             branch,
                             dateRange,
                             headers,
                             rows,
                         }: {
     title: string;
+    storeName: string;
     branch: string;
     dateRange: string;
     headers: string[];
@@ -622,7 +1411,7 @@ function createTablePdf({
         );
 
         addText(
-            `Branch: ${branch}`,
+            `Store: ${storeName}`,
             marginX,
             pageHeight - 49,
             8.5,
@@ -631,7 +1420,7 @@ function createTablePdf({
         );
 
         addText(
-            `Date range: ${dateRange}`,
+            `Branch: ${branch}`,
             marginX,
             pageHeight - 62,
             8.5,
@@ -639,10 +1428,19 @@ function createTablePdf({
             [0.21, 0.15, 0.27]
         );
 
+        addText(
+            `Date range: ${dateRange}`,
+            marginX,
+            pageHeight - 75,
+            8.5,
+            regularFont,
+            [0.21, 0.15, 0.27]
+        );
+
         commands.push(
-            `q 0.84 0.79 0.9 RG 0.6 w ${marginX} ${pageHeight - 70} m ${
+            `q 0.84 0.79 0.9 RG 0.6 w ${marginX} ${pageHeight - 83} m ${
                 pageWidth - marginX
-            } ${pageHeight - 70} l S Q`
+            } ${pageHeight - 83} l S Q`
         );
 
         cursorY = pageHeight - 84;
@@ -778,52 +1576,48 @@ function createTablePdf({
     return pdf;
 }
 
-function buildSalesRows(sales: SaleRecord[], bookings: BookingRecord[]) {
-    const rows = new Map<
-        string,
-        {
-            date: string;
-            transactionCount: number;
-            posSales: number;
-            bookingRevenue: number;
-            totalRevenue: number;
+function buildSalesRows(
+    posOrders: SaleRecord[],
+    bookingRevenueOrders: SaleRecord[]
+): SalesSummaryRow[] {
+    const posRows: SalesSummaryRow[] = posOrders.map((order) => ({
+        id: `pos-${order.id}`,
+        source: "pos",
+        date: order.date,
+        recordId: order.reference || order.id,
+        posSales: order.amount,
+        bookingRevenue: 0,
+        totalRevenue: order.amount,
+    }));
+
+    const bookingRows: SalesSummaryRow[] = bookingRevenueOrders.map((order) => ({
+        id: `booking-${order.id}`,
+        source: "booking",
+        date: order.date,
+        recordId: order.reference || order.id,
+        posSales: 0,
+        bookingRevenue: order.amount,
+        totalRevenue: order.amount,
+    }));
+
+    /*
+      Keep every database order on its own ledger row.
+      - POS-... / <STORE>-POS-... => POS Sales
+      - Non-POS booking order IDs such as DEMO-FC-W-SC-03 => Booking Revenue
+    */
+    return [...posRows, ...bookingRows].sort((left, right) => {
+        const dateDifference = right.date.localeCompare(left.date);
+
+        if (dateDifference !== 0) {
+            return dateDifference;
         }
-    >();
 
-    sales.forEach((sale) => {
-        const row = rows.get(sale.date) || {
-            date: sale.date,
-            transactionCount: 0,
-            posSales: 0,
-            bookingRevenue: 0,
-            totalRevenue: 0,
-        };
+        if (left.source !== right.source) {
+            return left.source === "pos" ? -1 : 1;
+        }
 
-        row.transactionCount += 1;
-        row.posSales += sale.amount;
-        row.totalRevenue += sale.amount;
-        rows.set(sale.date, row);
+        return left.recordId.localeCompare(right.recordId);
     });
-
-    bookings.forEach((booking) => {
-        if (booking.status === "cancelled") return;
-
-        const row = rows.get(booking.date) || {
-            date: booking.date,
-            transactionCount: 0,
-            posSales: 0,
-            bookingRevenue: 0,
-            totalRevenue: 0,
-        };
-
-        row.bookingRevenue += booking.amount;
-        row.totalRevenue += booking.amount;
-        rows.set(booking.date, row);
-    });
-
-    return Array.from(rows.values()).sort((a, b) =>
-        b.date.localeCompare(a.date)
-    );
 }
 
 function fallbackInventory(branch: string): InventoryItem[] {
@@ -1154,6 +1948,7 @@ function fallbackSales(branch: string): SaleRecord[] {
             category: "Balloons",
             quantity: 15,
             amount: 8500,
+            revenueSource: "pos",
         },
         {
             id: "sale-2",
@@ -1165,6 +1960,7 @@ function fallbackSales(branch: string): SaleRecord[] {
             category: "Lights & Sounds",
             quantity: 20,
             amount: 10200,
+            revenueSource: "pos",
         },
         {
             id: "sale-3",
@@ -1176,6 +1972,7 @@ function fallbackSales(branch: string): SaleRecord[] {
             category: "Furniture",
             quantity: 18,
             amount: 7800,
+            revenueSource: "pos",
         },
     ];
 }
@@ -1565,6 +2362,55 @@ function StatCard({
     );
 }
 
+function SalesFilterCard({
+                             label,
+                             value,
+                             helper,
+                             active,
+                             onClick,
+                         }: {
+    label: string;
+    value: string;
+    helper: string;
+    active: boolean;
+    onClick: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            aria-pressed={active}
+            className={`group cursor-pointer rounded-[14px] border p-3 text-left shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#2B174C]/30 ${
+                active
+                    ? "border-[#2B174C] bg-[#2B174C] text-white shadow-[0_8px_18px_rgba(43,23,76,0.18)] hover:bg-[#1B0D31] hover:shadow-[0_12px_24px_rgba(43,23,76,0.26)]"
+                    : "border-[#E6DDF0] bg-white text-[#1A1220] hover:border-[#BFA3D5] hover:bg-[#FCF9FF] hover:shadow-[0_10px_22px_rgba(43,23,76,0.12)]"
+            }`}
+        >
+            <p
+                className={`text-xs font-semibold transition-colors ${
+                    active
+                        ? "text-[#EBDCFF]"
+                        : "text-[#806A8C] group-hover:text-[#6F4D83]"
+                }`}
+            >
+                {label}
+            </p>
+
+            <p className="mt-1 text-[19px] font-bold">{value}</p>
+
+            <p
+                className={`mt-1 text-xs transition-colors ${
+                    active
+                        ? "text-[#F4E9B8]"
+                        : "text-[#7A6A84] group-hover:text-[#5F4E75]"
+                }`}
+            >
+                {helper}
+            </p>
+        </button>
+    );
+}
+
 function InventoryFilterCard({
                                  label,
                                  value,
@@ -1583,15 +2429,18 @@ function InventoryFilterCard({
             type="button"
             onClick={onClick}
             aria-pressed={active}
-            className={`rounded-[14px] border p-3 text-left shadow-sm transition ${
+            title={`View ${label.toLowerCase()} items`}
+            className={`group cursor-pointer rounded-[14px] border p-3 text-left shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#2B174C]/30 ${
                 active
-                    ? "border-[#2B174C] bg-[#2B174C] text-white shadow-[0_8px_18px_rgba(43,23,76,0.18)]"
-                    : "border-[#E6DDF0] bg-white text-[#1A1220] hover:border-[#CDB7E1] hover:bg-[#FFFEFC]"
+                    ? "border-[#2B174C] bg-[#2B174C] text-white shadow-[0_8px_18px_rgba(43,23,76,0.18)] hover:bg-[#1B0D31] hover:shadow-[0_12px_24px_rgba(43,23,76,0.26)]"
+                    : "border-[#E6DDF0] bg-white text-[#1A1220] hover:border-[#BFA3D5] hover:bg-[#FCF9FF] hover:shadow-[0_10px_22px_rgba(43,23,76,0.12)]"
             }`}
         >
             <p
-                className={`text-[11px] font-medium tracking-[0.08em] ${
-                    active ? "text-[#EBDCFF]" : "text-[#9B8AAA]"
+                className={`text-[11px] font-medium tracking-[0.08em] transition-colors ${
+                    active
+                        ? "text-[#EBDCFF]"
+                        : "text-[#9B8AAA] group-hover:text-[#6F4D83]"
                 }`}
             >
                 {label}
@@ -1600,8 +2449,10 @@ function InventoryFilterCard({
             <p className="mt-1 text-[19px] font-bold">{value}</p>
 
             <p
-                className={`mt-1 text-xs ${
-                    active ? "text-[#F4E9B8]" : "text-[#8A7A91]"
+                className={`mt-1 text-xs transition-colors ${
+                    active
+                        ? "text-[#F4E9B8]"
+                        : "text-[#8A7A91] group-hover:text-[#5F4E75]"
                 }`}
             >
                 {helper}
@@ -1626,15 +2477,17 @@ function StaffModuleFilterCard({
             type="button"
             onClick={onClick}
             aria-pressed={active}
-            className={`h-[82px] rounded-[14px] border p-3 text-left shadow-sm transition ${
+            className={`group h-[82px] cursor-pointer rounded-[14px] border p-3 text-left shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#2B174C]/30 ${
                 active
-                    ? "border-[#2B174C] bg-[#2B174C] text-white shadow-[0_8px_18px_rgba(43,23,76,0.18)]"
-                    : "border-[#E6DDF0] bg-white text-[#1A1220] hover:border-[#CDB7E1] hover:bg-[#FFFEFC]"
+                    ? "border-[#2B174C] bg-[#2B174C] text-white shadow-[0_8px_18px_rgba(43,23,76,0.18)] hover:bg-[#1B0D31] hover:shadow-[0_12px_24px_rgba(43,23,76,0.26)]"
+                    : "border-[#E6DDF0] bg-white text-[#1A1220] hover:border-[#BFA3D5] hover:bg-[#FCF9FF] hover:shadow-[0_10px_22px_rgba(43,23,76,0.12)]"
             }`}
         >
             <p
-                className={`truncate text-[11px] font-medium tracking-[0.08em] ${
-                    active ? "text-[#EBDCFF]" : "text-[#9B8AAA]"
+                className={`truncate text-[11px] font-medium tracking-[0.08em] transition-colors ${
+                    active
+                        ? "text-[#EBDCFF]"
+                        : "text-[#9B8AAA] group-hover:text-[#6F4D83]"
                 }`}
             >
                 {label}
@@ -1663,25 +2516,23 @@ function BookingFilterCard({
             type="button"
             onClick={onClick}
             aria-pressed={active}
-            className={`h-[66px] rounded-[14px] border p-3 text-left shadow-sm transition ${
+            className={`group h-[82px] cursor-pointer rounded-[14px] border p-3 text-left shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#2B174C]/30 ${
                 active
-                    ? "border-[#2B174C] bg-[#2B174C] text-white"
-                    : "border-[#E6DDF0] bg-white text-[#1A1220] hover:border-[#CDB7E1] hover:bg-[#FFFEFC]"
+                    ? "border-[#2B174C] bg-[#2B174C] text-white shadow-[0_8px_18px_rgba(43,23,76,0.18)] hover:bg-[#1B0D31] hover:shadow-[0_12px_24px_rgba(43,23,76,0.26)]"
+                    : "border-[#E6DDF0] bg-white text-[#1A1220] hover:border-[#BFA3D5] hover:bg-[#FCF9FF] hover:shadow-[0_10px_22px_rgba(43,23,76,0.12)]"
             }`}
         >
             <p
-                className={`truncate text-[10px] font-medium tracking-[0.08em] ${
-                    active ? "text-[#EBDCFF]" : "text-[#9B8AAA]"
+                className={`truncate text-[11px] font-medium tracking-[0.08em] transition-colors ${
+                    active
+                        ? "text-[#EBDCFF]"
+                        : "text-[#9B8AAA] group-hover:text-[#6F4D83]"
                 }`}
             >
                 {label}
             </p>
 
-            <p
-                className={`mt-1 text-[19px] font-bold leading-none ${
-                    active ? "text-white" : "text-[#1A1220]"
-                }`}
-            >
+            <p className="mt-2 text-[19px] font-bold leading-none">
                 {value}
             </p>
         </button>
@@ -1709,7 +2560,7 @@ function ReportModuleCard({
         <button
             type="button"
             onClick={onClick}
-            className="group relative flex min-h-[166px] flex-col rounded-[14px] border border-[#E6DDF0] bg-white p-3 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-[#CDB7E1] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#2B174C]/30"
+            className="group relative flex min-h-[166px] flex-col rounded-[14px] border border-[#E6DDF0] bg-white p-3 text-left shadow-sm transition duration-200 hover:border-[#CDB7E1] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#2B174C]/30"
             aria-label={`Open ${title}`}
         >
             <div className="flex items-start justify-between gap-4">
@@ -1770,15 +2621,146 @@ function SectionCard({
     );
 }
 
+function OwnerBranchSelector({
+                                 value,
+                                 options,
+                                 onChange,
+                             }: {
+    value: string;
+    options: string[];
+    onChange: (branch: string) => void;
+}) {
+    const [query, setQuery] = useState("");
+    const [isOpen, setIsOpen] = useState(false);
+
+    const filteredOptions = useMemo(() => {
+        const normalizedQuery = query.trim().toLowerCase();
+
+        if (!normalizedQuery) {
+            return options;
+        }
+
+        return options.filter((option) =>
+            option.toLowerCase().includes(normalizedQuery)
+        );
+    }, [options, query]);
+
+    const inputValue = isOpen ? query : value;
+
+    const chooseBranch = (branch: string) => {
+        onChange(branch);
+        setQuery("");
+        setIsOpen(false);
+    };
+
+    return (
+        <div className="relative w-full sm:w-[260px]">
+            <p className="mb-1 text-[10px] font-medium tracking-[0.08em] text-[#806A8C]">
+                BRANCH
+            </p>
+
+            <div className="relative">
+                <Search
+                    size={15}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#806A8C]"
+                />
+
+                <input
+                    value={inputValue}
+                    onFocus={() => {
+                        setIsOpen(true);
+                        setQuery("");
+                    }}
+                    onBlur={() => {
+                        window.setTimeout(() => {
+                            setIsOpen(false);
+                            setQuery("");
+                        }, 150);
+                    }}
+                    onChange={(event) => {
+                        setQuery(event.target.value);
+                        setIsOpen(true);
+                    }}
+                    onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                            setIsOpen(false);
+                            setQuery("");
+                            event.currentTarget.blur();
+                        }
+
+                        if (event.key === "Enter" && filteredOptions.length === 1) {
+                            event.preventDefault();
+                            chooseBranch(filteredOptions[0]);
+                        }
+                    }}
+                    placeholder="Search or select branch..."
+                    aria-label="Search or select report branch"
+                    aria-expanded={isOpen}
+                    aria-haspopup="listbox"
+                    className="h-9 w-full rounded-lg border border-[#E6DDF0] bg-white px-9 pr-9 text-sm font-normal text-[#1A1220] outline-none transition placeholder:text-[#A99BB1] focus:border-[#8D63C8] focus:ring-2 focus:ring-[#8D63C8]/15"
+                />
+
+                <ChevronDown
+                    size={15}
+                    className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#5F4E75] transition-transform ${
+                        isOpen ? "rotate-180" : ""
+                    }`}
+                />
+            </div>
+
+            {isOpen && (
+                <div
+                    role="listbox"
+                    className="absolute z-40 mt-2 max-h-56 w-full overflow-y-auto rounded-xl border border-[#E6DDF0] bg-white p-1.5 shadow-lg"
+                >
+                    {filteredOptions.length > 0 ? (
+                        filteredOptions.map((option) => {
+                            const selected = option === value;
+
+                            return (
+                                <button
+                                    key={option}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={selected}
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => chooseBranch(option)}
+                                    className={`flex w-full items-center rounded-lg px-3 py-2.5 text-left text-sm transition ${
+                                        selected
+                                            ? "bg-[#F0EAFE] font-semibold text-[#2B174C]"
+                                            : "text-[#1A1220] hover:bg-[#F7F1FF]"
+                                    }`}
+                                >
+                                    <span className="truncate">{option}</span>
+                                </button>
+                            );
+                        })
+                    ) : (
+                        <p className="px-3 py-4 text-sm text-[#8A7A91]">
+                            No matching branch found.
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function ReportsWorkspace({
                                      initialRole,
                                      assignedBranch,
+                                     storeName,
                                  }: {
     initialRole: UserRole;
     assignedBranch: string;
+    storeName: string;
 }) {
     const role = initialRole;
-    const [branch, setBranch] = useState(assignedBranch || DEFAULT_BRANCH);
+    const [branch, setBranch] = useState(() =>
+        initialRole === "owner"
+            ? ALL_BRANCHES
+            : assignedBranch || DEFAULT_BRANCH
+    );
     const [startDate, setStartDate] = useState(getMonthStart(getToday()));
     const [endDate, setEndDate] = useState(getToday());
     const [selectedReport, setSelectedReport] = useState<ReportKey | null>(null);
@@ -1788,13 +2770,58 @@ export function ReportsWorkspace({
     const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
     const [staffModuleFilter, setStaffModuleFilter] =
         useState<StaffModuleFilter>("all");
+    const [salesView, setSalesView] = useState<SalesView>("summary");
     const [report, setReport] = useState<ReportData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [liveInventoryState, setLiveInventoryState] =
+        useState<LiveInventoryLoadState>({
+            ready: false,
+            items: [],
+        });
+    const [liveBranchOptions, setLiveBranchOptions] = useState<
+        LiveBranchOption[]
+    >([]);
+    const [liveSalesState, setLiveSalesState] =
+        useState<LiveSalesLoadState>({
+            ready: false,
+            items: [],
+        });
+    const [liveBookingsState, setLiveBookingsState] =
+        useState<LiveBookingsLoadState>({
+            ready: false,
+            items: [],
+        });
     const [currentDateTime, setCurrentDateTime] = useState<Date | null>(null);
+
+    const storedAssignedBranchId = getStoredSessionValue([
+        "branch_id",
+        "stocknbook_branch_id",
+        "manager_branch_id",
+        "staff_branch_id",
+    ]);
+
+    const selectedOwnerBranchId = useMemo(() => {
+        if (initialRole !== "owner" || isAllBranches(branch)) {
+            return "";
+        }
+
+        const normalizedBranch = branch.trim().toLowerCase();
+
+        return (
+            liveBranchOptions.find(
+                (item) => item.name.trim().toLowerCase() === normalizedBranch
+            )?.id || ""
+        );
+    }, [branch, initialRole, liveBranchOptions]);
+
+    const scopedSalesBranchId =
+        initialRole === "owner"
+            ? selectedOwnerBranchId
+            : storedAssignedBranchId;
 
     const loadReport = useCallback(async () => {
         const query = new URLSearchParams({
-            branch,
+            branch: isAllBranches(branch) ? "All branches" : branch,
             month: startDate.slice(0, 7),
             startDate,
             endDate,
@@ -1818,9 +2845,374 @@ export function ReportsWorkspace({
         }
     }, [assignedBranch, branch, endDate, role, startDate]);
 
+    const loadLiveBranches = useCallback(async () => {
+        const token = getStoredSessionValue(["token"]);
+
+        if (!token) {
+            setLiveBranchOptions([]);
+            return;
+        }
+
+        try {
+            const response = await fetch("/api/branches", {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+                cache: "no-store",
+            });
+
+            const payload = (await response.json()) as LiveBranchesResponse;
+
+            if (!response.ok || !Array.isArray(payload.branches)) {
+                throw new Error(payload.error || "Unable to load branches.");
+            }
+
+            const normalizedBranches = payload.branches
+                .map((rawValue) => {
+                    const raw = asLiveRecord(rawValue);
+                    const id = asLiveText(
+                        raw.id,
+                        raw.branchId,
+                        raw.branch_id
+                    );
+                    const name = asLiveText(
+                        raw.branchName,
+                        raw.branch_name,
+                        raw.name
+                    );
+
+                    return id && name ? { id, name } : null;
+                })
+                .filter(
+                    (item): item is LiveBranchOption => Boolean(item)
+                )
+                .filter(
+                    (item, index, items) =>
+                        items.findIndex(
+                            (candidate) =>
+                                candidate.name.trim().toLowerCase() ===
+                                item.name.trim().toLowerCase()
+                        ) === index
+                );
+
+            setLiveBranchOptions(normalizedBranches);
+        } catch (error) {
+            console.warn("Reports branch loading failed:", error);
+            setLiveBranchOptions([]);
+        }
+    }, []);
+
+    const loadLiveSales = useCallback(async () => {
+        const token = getStoredSessionValue(["token"]);
+
+        if (!token) {
+            setLiveSalesState({
+                ready: true,
+                items: [],
+            });
+            return;
+        }
+
+        const storeId = getStoredSessionValue([
+            "store_id",
+            "stocknbook_store_id",
+        ]);
+        const request: Record<string, unknown> = {
+            action: "get_orders",
+        };
+        const numericBranchId = Number(scopedSalesBranchId);
+
+        if (Number.isFinite(numericBranchId) && numericBranchId > 0) {
+            request.branch_id = numericBranchId;
+        }
+
+        if (storeId) {
+            request.store_id = Number(storeId);
+        }
+
+        try {
+            const response = await fetch("/api/pos", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(request),
+                cache: "no-store",
+            });
+
+            const payload = (await response.json()) as LiveSalesResponse;
+
+            if (!response.ok || (payload as { success?: boolean }).success === false) {
+                throw new Error(payload.error || "Unable to load POS orders.");
+            }
+
+            const fallbackBranch =
+                initialRole === "owner" && isAllBranches(branch)
+                    ? ALL_BRANCHES
+                    : branch || assignedBranch || DEFAULT_BRANCH;
+
+            const rawOrders = getLiveCollection(payload, [
+                "orders",
+                "sales",
+                "transactions",
+            ]);
+
+            const normalizedOrders = rawOrders
+                .map((order, index) =>
+                    normalizeLivePosOrder(order, index, fallbackBranch)
+                )
+                .filter((order) =>
+                    isDateInSelectedRange(order.date, startDate, endDate)
+                );
+
+            const ownerBranchScopedOrders =
+                initialRole === "owner" &&
+                !isAllBranches(branch) &&
+                !scopedSalesBranchId
+                    ? normalizedOrders.filter(
+                        (order) =>
+                            order.branch.trim().toLowerCase() ===
+                            branch.trim().toLowerCase()
+                    )
+                    : normalizedOrders;
+
+            setLiveSalesState({
+                ready: true,
+                items: ownerBranchScopedOrders,
+            });
+        } catch (error) {
+            console.warn("Reports POS order loading failed:", error);
+
+            // Keep the report truthful when live orders cannot be loaded.
+            // Do not substitute unrelated fallback/sample sales records.
+            setLiveSalesState({
+                ready: true,
+                items: [],
+            });
+        }
+    }, [
+        assignedBranch,
+        branch,
+        endDate,
+        initialRole,
+        scopedSalesBranchId,
+        startDate,
+    ]);
+
+    const loadLiveBookings = useCallback(async () => {
+        const token = getStoredSessionValue(["token"]);
+
+        if (!token) {
+            setLiveBookingsState({
+                ready: true,
+                items: [],
+            });
+            return;
+        }
+
+        const storeId = getStoredSessionValue([
+            "store_id",
+            "stocknbook_store_id",
+        ]);
+        const request: Record<string, unknown> = {
+            action: "get_bookings",
+            role: initialRole,
+        };
+        const numericBranchId = Number(scopedSalesBranchId);
+
+        if (Number.isFinite(numericBranchId) && numericBranchId > 0) {
+            request.branch_id = numericBranchId;
+        }
+
+        if (storeId) {
+            request.store_id = Number(storeId);
+        }
+
+        try {
+            const response = await fetch("/api/bookings", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(request),
+                cache: "no-store",
+            });
+
+            const payload = (await response.json()) as LiveBookingsResponse;
+
+            if (!response.ok || (payload as { success?: boolean }).success === false) {
+                throw new Error(payload.error || "Unable to load bookings.");
+            }
+
+            const fallbackBranch =
+                initialRole === "owner" && isAllBranches(branch)
+                    ? ALL_BRANCHES
+                    : branch || assignedBranch || DEFAULT_BRANCH;
+
+            const rawBookings = getLiveCollection(payload, [
+                "bookings",
+                "records",
+            ]);
+
+            const normalizedBookings = rawBookings
+                .map((booking, index) =>
+                    normalizeLiveBooking(booking, index, fallbackBranch)
+                )
+                .filter((booking) =>
+                    isDateInSelectedRange(booking.date, startDate, endDate)
+                );
+
+            const ownerBranchScopedBookings =
+                initialRole === "owner" &&
+                !isAllBranches(branch) &&
+                !scopedSalesBranchId
+                    ? normalizedBookings.filter(
+                        (booking) =>
+                            booking.branch.trim().toLowerCase() ===
+                            branch.trim().toLowerCase()
+                    )
+                    : normalizedBookings;
+
+            setLiveBookingsState({
+                ready: true,
+                items: ownerBranchScopedBookings,
+            });
+        } catch (error) {
+            console.warn("Reports booking loading failed:", error);
+
+            // Keep booking revenue truthful. Do not substitute unrelated
+            // fallback/sample booking records when live data is unavailable.
+            setLiveBookingsState({
+                ready: true,
+                items: [],
+            });
+        }
+    }, [
+        assignedBranch,
+        branch,
+        endDate,
+        initialRole,
+        scopedSalesBranchId,
+        startDate,
+    ]);
+
+    const loadLiveInventory = useCallback(async () => {
+        const token = getStoredSessionValue(["token"]);
+
+        if (!token) {
+            setLiveInventoryState({
+                ready: true,
+                items: [],
+            });
+            return;
+        }
+
+        const storeId = getStoredSessionValue([
+            "store_id",
+            "stocknbook_store_id",
+        ]);
+
+        const assignedBranchId = getStoredSessionValue([
+            "branch_id",
+            "stocknbook_branch_id",
+            "manager_branch_id",
+            "staff_branch_id",
+        ]);
+
+        const productRequest: Record<string, unknown> = {
+            action: "get_products",
+            include_variants: true,
+        };
+
+        if (storeId) {
+            productRequest.store_id = Number(storeId);
+        }
+
+        if (role !== "owner" && assignedBranchId) {
+            productRequest.branch_id = Number(assignedBranchId);
+        }
+
+        try {
+            const response = await fetch("/api/products", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(productRequest),
+                cache: "no-store",
+            });
+
+            const payload = (await response.json()) as LiveProductsResponse;
+
+            if (!response.ok || !Array.isArray(payload.products)) {
+                throw new Error(payload.error || "Unable to load live inventory.");
+            }
+
+            const normalizedInventory = payload.products.map((product, index) =>
+                normalizeLiveInventoryProduct(product, index, assignedBranch)
+            );
+
+            const scopedInventory =
+                role === "owner" &&
+                !isAllBranches(branch) &&
+                branch.trim()
+                    ? normalizedInventory.filter(
+                        (item) =>
+                            item.branch.trim().toLowerCase() ===
+                            branch.trim().toLowerCase()
+                    )
+                    : normalizedInventory;
+
+            setLiveInventoryState({
+                ready: true,
+                items: scopedInventory,
+            });
+        } catch (error) {
+            console.warn("Reports live inventory loading failed:", error);
+
+            // Do not show sample stock when the live inventory request fails.
+            // An empty list is more truthful than unrelated demo items.
+            setLiveInventoryState({
+                ready: true,
+                items: [],
+            });
+        }
+    }, [assignedBranch, branch, role]);
+
+    const handleRefresh = useCallback(async () => {
+        await Promise.all([
+            loadReport(),
+            loadLiveBranches(),
+            loadLiveInventory(),
+            loadLiveSales(),
+            loadLiveBookings(),
+        ]);
+        setCurrentDateTime(new Date());
+    }, [
+        loadLiveBookings,
+        loadLiveBranches,
+        loadLiveInventory,
+        loadLiveSales,
+        loadReport,
+    ]);
+
     useEffect(() => {
         void loadReport();
-    }, [loadReport]);
+        void loadLiveBranches();
+        void loadLiveInventory();
+        void loadLiveSales();
+        void loadLiveBookings();
+    }, [
+        loadLiveBookings,
+        loadLiveBranches,
+        loadLiveInventory,
+        loadLiveSales,
+        loadReport,
+    ]);
 
     useEffect(() => {
         const updateDateTime = () => setCurrentDateTime(new Date());
@@ -1834,24 +3226,72 @@ export function ReportsWorkspace({
     }, []);
 
     const actualRole = report?.access?.role || role;
-    const isOwner = actualRole === "owner";
+    const isOwner = role === "owner";
 
     const activeBranch = isOwner
         ? branch
-        : report?.access?.assignedBranch || assignedBranch;
+        : assignedBranch || report?.access?.assignedBranch || "Assigned Branch";
+
+    const activeStoreName = useMemo(() => {
+        const apiStoreName =
+            report?.storeName ||
+            report?.store_name ||
+            report?.businessName ||
+            report?.business_name ||
+            "";
+
+        return String(apiStoreName || storeName || "Store").trim() || "Store";
+    }, [
+        report?.businessName,
+        report?.business_name,
+        report?.storeName,
+        report?.store_name,
+        storeName,
+    ]);
 
     const branchOptions = useMemo(() => {
-        if (report?.branchOptions?.length) return report.branchOptions;
-        return [ALL_BRANCHES, DEFAULT_BRANCH, "Pasay Branch", "Parañaque Branch"];
-    }, [report?.branchOptions]);
+        const storedBranchName = getStoredSessionValue([
+            "branch_name",
+            "stocknbook_branch_name",
+            "branchName",
+        ]);
 
-    const inventory = useMemo(
-        () =>
-            report?.inventoryList?.length
-                ? report.inventoryList
-                : fallbackInventory(activeBranch),
-        [activeBranch, report?.inventoryList]
-    );
+        const options = [
+            ...liveBranchOptions.map((item) => item.name),
+            ...(report?.branchOptions || []),
+            assignedBranch,
+            storedBranchName,
+            "Main Branch",
+        ];
+
+        const uniqueBranches = options
+            .map((item) => String(item || "").trim())
+            .filter(Boolean)
+            .filter((item) => !isAllBranches(item))
+            .filter(
+                (item, index, values) =>
+                    values.findIndex(
+                        (value) => value.toLowerCase() === item.toLowerCase()
+                    ) === index
+            );
+
+        return [ALL_BRANCHES, ...uniqueBranches];
+    }, [assignedBranch, liveBranchOptions, report?.branchOptions]);
+
+    const inventory = useMemo(() => {
+        if (liveInventoryState.ready) {
+            return liveInventoryState.items;
+        }
+
+        return report?.inventoryList?.length
+            ? report.inventoryList
+            : fallbackInventory(activeBranch);
+    }, [
+        activeBranch,
+        liveInventoryState.items,
+        liveInventoryState.ready,
+        report?.inventoryList,
+    ]);
 
     const restocks = useMemo(
         () =>
@@ -1861,20 +3301,56 @@ export function ReportsWorkspace({
         [activeBranch, report?.restockHistory]
     );
 
-    const bookings = useMemo(
-        () =>
+    const bookings = useMemo(() => {
+        if (liveBookingsState.ready) {
+            return liveBookingsState.items;
+        }
+
+        const sourceBookings =
             report?.bookingList?.length
                 ? report.bookingList
-                : fallbackBookings(activeBranch),
-        [activeBranch, report?.bookingList]
+                : fallbackBookings(activeBranch);
+
+        return sourceBookings.filter((booking) =>
+            isDateInSelectedRange(
+                toReportDateValue(booking.date),
+                startDate,
+                endDate
+            )
+        );
+    }, [
+        activeBranch,
+        endDate,
+        liveBookingsState.items,
+        liveBookingsState.ready,
+        report?.bookingList,
+        startDate,
+    ]);
+
+    const orderRevenueRecords = useMemo(
+        () => liveSalesState.items,
+        [liveSalesState.items]
     );
 
+    /*
+      This is the important split:
+      only POS-pattern orders go to POS Sales;
+      all booking-linked/non-POS order IDs go to Booking Revenue.
+    */
     const sales = useMemo(
         () =>
-            report?.salesList?.length
-                ? report.salesList
-                : fallbackSales(activeBranch),
-        [activeBranch, report?.salesList]
+            orderRevenueRecords.filter(
+                (order) => order.revenueSource === "pos"
+            ),
+        [orderRevenueRecords]
+    );
+
+    const bookingRevenueOrders = useMemo(
+        () =>
+            orderRevenueRecords.filter(
+                (order) => order.revenueSource === "booking"
+            ),
+        [orderRevenueRecords]
     );
 
     const forecasts = useMemo(
@@ -1940,21 +3416,33 @@ export function ReportsWorkspace({
             ? "Track staff actions from Bookings, Inventory, Packages, and Sales / POS."
             : `Showing only staff actions from the ${staffModuleFilter} module.`;
 
-    const lowStock = useMemo(
-        () =>
-            report?.lowStockItems?.length
-                ? report.lowStockItems
-                : inventory.filter((item) => item.status === "Low Stock"),
-        [inventory, report?.lowStockItems]
-    );
+    const lowStock = useMemo(() => {
+        if (liveInventoryState.ready) {
+            return inventory.filter((item) => item.status === "Low Stock");
+        }
 
-    const outOfStock = useMemo(
-        () =>
-            report?.outOfStockItems?.length
-                ? report.outOfStockItems
-                : inventory.filter((item) => item.status === "Out of Stock"),
-        [inventory, report?.outOfStockItems]
-    );
+        return report?.lowStockItems?.length
+            ? report.lowStockItems
+            : inventory.filter((item) => item.status === "Low Stock");
+    }, [
+        inventory,
+        liveInventoryState.ready,
+        report?.lowStockItems,
+    ]);
+
+    const outOfStock = useMemo(() => {
+        if (liveInventoryState.ready) {
+            return inventory.filter((item) => item.status === "Out of Stock");
+        }
+
+        return report?.outOfStockItems?.length
+            ? report.outOfStockItems
+            : inventory.filter((item) => item.status === "Out of Stock");
+    }, [
+        inventory,
+        liveInventoryState.ready,
+        report?.outOfStockItems,
+    ]);
 
     const displayedInventory = useMemo(() => {
         if (inventoryFilter === "low") return lowStock;
@@ -2035,17 +3523,51 @@ export function ReportsWorkspace({
         },
     ];
 
-    const salesRows = useMemo(() => buildSalesRows(sales, bookings), [bookings, sales]);
+    const salesRows = useMemo(
+        () => buildSalesRows(sales, bookingRevenueOrders),
+        [bookingRevenueOrders, sales]
+    );
+
+    const posTransactions = useMemo(
+        () =>
+            [...sales].sort((a, b) => {
+                const dateDifference = b.date.localeCompare(a.date);
+
+                if (dateDifference !== 0) {
+                    return dateDifference;
+                }
+
+                return (b.reference || b.id).localeCompare(a.reference || a.id);
+            }),
+        [sales]
+    );
+
+    const bookingRevenueRecords = useMemo(
+        () =>
+            bookingRevenueOrders
+                .map((order) => ({
+                    ...order,
+                    statusLabel: resolveBookingRevenueStatus(order, bookings),
+                }))
+                .sort((a, b) => {
+                    const dateDifference = b.date.localeCompare(a.date);
+
+                    if (dateDifference !== 0) {
+                        return dateDifference;
+                    }
+
+                    return (b.reference || b.id).localeCompare(
+                        a.reference || a.id
+                    );
+                }),
+        [bookingRevenueOrders, bookings]
+    );
 
     const totalStock = useMemo(() => sumBy(inventory, (item) => item.stock), [inventory]);
     const totalSales = useMemo(() => sumBy(sales, (item) => item.amount), [sales]);
     const totalBookingRevenue = useMemo(
-        () =>
-            sumBy(
-                bookings.filter((item) => item.status !== "cancelled"),
-                (item) => item.amount
-            ),
-        [bookings]
+        () => sumBy(bookingRevenueRecords, (item) => item.amount),
+        [bookingRevenueRecords]
     );
 
     const completedBookings = useMemo(
@@ -2166,20 +3688,62 @@ export function ReportsWorkspace({
         }
 
         if (selectedReport === "sales") {
+            if (salesView === "pos") {
+                return {
+                    title: "POS Orders Report",
+                    headers: [
+                        "Date",
+                        "Order ID",
+                        "Items",
+                        "Total",
+                    ],
+                    rows: posTransactions.map((item) => [
+                        formatDate(item.date),
+                        item.reference || item.id,
+                        getSaleItemsLabel(item),
+                        formatPeso(item.amount),
+                    ]),
+                };
+            }
+
+            if (salesView === "booking") {
+                return {
+                    title: "Completed Booking Revenue Report",
+                    headers: [
+                        "Date",
+                        "Reference No.",
+                        "Customer",
+                        "Package",
+                        "Status",
+                        "Revenue",
+                    ],
+                    rows: bookingRevenueRecords.map((item) => [
+                        formatDate(item.date),
+                        item.reference || item.id,
+                        item.customer || "-",
+                        getSaleItemsLabel(item),
+                        item.statusLabel || "Completed",
+                        formatPeso(item.amount),
+                    ]),
+                };
+            }
+
             return {
-                title: "Sales Report",
+                title: "Sales Summary Report",
                 headers: [
                     "Date",
-                    "Transaction Count",
+                    "Transaction / Booking ID(s)",
                     "POS Sales",
                     "Booking Revenue",
                     "Total Revenue",
                 ],
                 rows: salesRows.map((item) => [
                     formatDate(item.date),
-                    String(item.transactionCount),
-                    formatPeso(item.posSales),
-                    formatPeso(item.bookingRevenue),
+                    item.recordId || "-",
+                    item.source === "pos" ? formatPeso(item.posSales) : "-",
+                    item.source === "booking"
+                        ? formatPeso(item.bookingRevenue)
+                        : "-",
                     formatPeso(item.totalRevenue),
                 ]),
             };
@@ -2300,7 +3864,7 @@ export function ReportsWorkspace({
         </head>
         <body>
           <h1>${escapeHtml(table.title)}</h1>
-          <p>Branch: ${escapeHtml(activeBranch)} | Date range: ${escapeHtml(currentRange)}</p>
+          <p>Store: ${escapeHtml(activeStoreName)} | Branch: ${escapeHtml(activeBranch)} | Date range: ${escapeHtml(currentRange)}</p>
           <table>
             <thead><tr>${table.headers
             .map((header) => `<th>${escapeHtml(header)}</th>`)
@@ -2341,6 +3905,7 @@ export function ReportsWorkspace({
           <table>
             <thead>
               <tr><th colspan="${table.headers.length}">${escapeHtml(table.title)}</th></tr>
+              <tr><td colspan="${table.headers.length}">Store: ${escapeHtml(activeStoreName)} | Branch: ${escapeHtml(activeBranch)} | Date range: ${escapeHtml(currentRange)}</td></tr>
               <tr>${table.headers
             .map((header) => `<th>${escapeHtml(header)}</th>`)
             .join("")}</tr>
@@ -2362,6 +3927,7 @@ export function ReportsWorkspace({
         const table = getExportTable();
         const pdf = createTablePdf({
             title: table.title,
+            storeName: activeStoreName,
             branch: activeBranch,
             dateRange: currentRange,
             headers: table.headers,
@@ -2392,7 +3958,7 @@ export function ReportsWorkspace({
 
                         <button
                             type="button"
-                            onClick={() => void loadReport()}
+                            onClick={() => void handleRefresh()}
                             disabled={loading}
                             aria-label="Refresh reports"
                             title="Refresh reports"
@@ -2409,6 +3975,45 @@ export function ReportsWorkspace({
             </div>
 
             <div className="px-5 py-5">
+                <section className="mb-3 rounded-[14px] border border-[#E6DDF0] bg-white px-4 py-3 shadow-sm">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EFE8F8] text-[#4E2C66]">
+                                <Store size={18} />
+                            </div>
+
+                            <div className="min-w-0">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#806A8C]">
+                                    Report Context
+                                </p>
+                                <p className="mt-0.5 truncate text-[15px] font-bold text-[#1A1220]">
+                                    {activeStoreName}
+                                </p>
+                            </div>
+                        </div>
+
+                        {isOwner ? (
+                            <OwnerBranchSelector
+                                value={branch}
+                                options={branchOptions}
+                                onChange={setBranch}
+                            />
+                        ) : (
+                            <div className="flex min-w-0 items-center gap-2 border-t border-[#F0ECF5] pt-3 sm:border-t-0 sm:border-l sm:pl-5 sm:pt-0">
+                                <MapPin size={16} className="shrink-0 text-[#806A8C]" />
+                                <div className="min-w-0">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#806A8C]">
+                                        Branch
+                                    </p>
+                                    <p className="mt-0.5 truncate text-[15px] font-semibold text-[#1A1220]">
+                                        {activeBranch}
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </section>
+
                 {!selectedReport ? (
                     <>
                         {loading ? (
@@ -2476,28 +4081,13 @@ export function ReportsWorkspace({
                                             {selectedTitle}
                                         </h2>
                                         <p className="mt-0.5 text-xs text-[#8A7A91]">
-                                            {activeBranch} · {currentRange}
+                                            {activeStoreName} · {activeBranch} · {currentRange}
                                         </p>
                                     </div>
                                 </div>
 
                                 <div className="flex flex-wrap items-end gap-2">
-                                    {isOwner ? (
-                                        <label className="flex flex-col gap-1 text-[10px] font-medium tracking-[0.08em] text-[#806A8C]">
-                                            BRANCH
-                                            <select
-                                                value={branch}
-                                                onChange={(event) => setBranch(event.target.value)}
-                                                className="h-9 min-w-[170px] rounded-lg border border-[#E6DDF0] bg-white px-3 text-sm font-normal text-[#1A1220] outline-none focus:border-[#8D63C8]"
-                                            >
-                                                {branchOptions.map((item) => (
-                                                    <option key={item} value={item}>
-                                                        {item}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </label>
-                                    ) : (
+                                    {actualRole === "staff" ? (
                                         <div className="rounded-lg border border-[#E6DDF0] bg-[#FFFCF7] px-3 py-2">
                                             <p className="text-xs font-semibold text-[#806A8C]">
                                                 ACCOUNT BRANCH
@@ -2506,7 +4096,7 @@ export function ReportsWorkspace({
                                                 {activeBranch}
                                             </p>
                                         </div>
-                                    )}
+                                    ) : null}
 
                                     <label className="flex flex-col gap-1 text-[10px] font-medium tracking-[0.08em] text-[#806A8C]">
                                         START
@@ -2532,7 +4122,7 @@ export function ReportsWorkspace({
 
                                     <button
                                         type="button"
-                                        onClick={() => void loadReport()}
+                                        onClick={() => void handleRefresh()}
                                         className="h-9 rounded-lg bg-[#2B174C] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#3A205F]"
                                     >
                                         Apply
@@ -2903,7 +4493,7 @@ export function ReportsWorkspace({
 
                         {selectedReport === "bookings" && (
                             <div className="mt-4 space-y-4">
-                                <div className="overflow-x-auto pb-1">
+                                <div className="overflow-x-auto px-1 py-1">
                                     <section className="grid min-w-[690px] grid-cols-6 gap-2">
                                         {bookingFilters.map((filter) => (
                                             <BookingFilterCard
@@ -3066,52 +4656,202 @@ export function ReportsWorkspace({
                         {selectedReport === "sales" && (
                             <div className="mt-4 space-y-4">
                                 <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                                    <StatCard
-                                        label="POS SALES"
-                                        value={formatPeso(totalSales)}
-                                        helper={`${sales.length} transaction(s)`}
-                                    />
-                                    <StatCard
-                                        label="BOOKING REVENUE"
-                                        value={formatPeso(totalBookingRevenue)}
-                                        helper="Excludes cancelled bookings"
-                                    />
-                                    <StatCard
+                                    <SalesFilterCard
                                         label="TOTAL REVENUE"
                                         value={formatPeso(totalSales + totalBookingRevenue)}
-                                        helper="Sales plus active bookings"
+                                        helper="POS sales plus booking-linked order revenue · View summary"
+                                        active={salesView === "summary"}
+                                        onClick={() => setSalesView("summary")}
+                                    />
+
+                                    <SalesFilterCard
+                                        label="POS SALES"
+                                        value={formatPeso(totalSales)}
+                                        helper={`${posTransactions.length} POS order(s) for the selected date range · View orders`}
+                                        active={salesView === "pos"}
+                                        onClick={() => setSalesView("pos")}
+                                    />
+
+                                    <SalesFilterCard
+                                        label="BOOKING REVENUE"
+                                        value={formatPeso(totalBookingRevenue)}
+                                        helper={`${bookingRevenueRecords.length} booking revenue record(s) · View records`}
+                                        active={salesView === "booking"}
+                                        onClick={() => setSalesView("booking")}
                                     />
                                 </section>
 
-                                <SectionCard
-                                    title="Sales Summary"
-                                    subtitle="Daily transaction count, POS sales, booking revenue, and overall revenue."
-                                >
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full min-w-[760px] table-fixed text-sm">
-                                            <thead>
-                                            <tr className="border-b border-[#E6DDF0]">
-                                                <th className="w-[22%] px-3 py-2 text-left text-[11px] font-medium tracking-widest text-[#806A8C]">Date</th>
-                                                <th className="w-[18%] px-3 py-2 text-right text-[11px] font-medium tracking-widest text-[#806A8C]">Transactions</th>
-                                                <th className="w-[20%] px-3 py-2 text-right text-[11px] font-medium tracking-widest text-[#806A8C]">POS Sales</th>
-                                                <th className="w-[20%] px-3 py-2 text-right text-[11px] font-medium tracking-widest text-[#806A8C]">Booking Revenue</th>
-                                                <th className="w-[20%] px-3 py-2 text-right text-[11px] font-medium tracking-widest text-[#806A8C]">Total Revenue</th>
-                                            </tr>
-                                            </thead>
-                                            <tbody>
-                                            {salesRows.map((item) => (
-                                                <tr key={item.date} className="border-b border-[#EFE7F4] last:border-0">
-                                                    <td className="px-3 py-3 font-semibold text-[#1A1220]">{formatDate(item.date)}</td>
-                                                    <td className="px-3 py-3 text-right text-[#6A5D6F]">{formatNumber(item.transactionCount)}</td>
-                                                    <td className="px-3 py-3 text-right font-semibold text-[#1A1220]">{formatPeso(item.posSales)}</td>
-                                                    <td className="px-3 py-3 text-right font-semibold text-[#176C27]">{formatPeso(item.bookingRevenue)}</td>
-                                                    <td className="px-3 py-3 text-right font-semibold text-[#2B174C]">{formatPeso(item.totalRevenue)}</td>
+                                {salesView === "summary" && (
+                                    <SectionCard
+                                        title="Total Revenue Records"
+                                        subtitle="One compact row per POS order or booking-linked order. POS and Booking Revenue stay in separate columns."
+                                    >
+                                        <div className="overflow-x-auto">
+                                            <div className="mx-auto max-w-[1080px]">
+                                                <table className="w-full min-w-[820px] table-fixed text-[13px]">
+                                                    <thead>
+                                                    <tr className="border-b border-[#E6DDF0]">
+                                                        <th className="w-[15%] px-2.5 py-2 text-left text-[10px] font-medium tracking-widest text-[#806A8C]">Date</th>
+                                                        <th className="w-[33%] px-2.5 py-2 text-left text-[10px] font-medium tracking-widest text-[#806A8C]">Transaction / Booking ID</th>
+                                                        <th className="w-[17%] px-2.5 py-2 text-right text-[10px] font-medium tracking-widest text-[#806A8C]">POS Sales</th>
+                                                        <th className="w-[19%] px-2.5 py-2 text-right text-[10px] font-medium tracking-widest text-[#806A8C]">Booking Revenue</th>
+                                                        <th className="w-[16%] px-2.5 py-2 text-right text-[10px] font-medium tracking-widest text-[#806A8C]">Total Revenue</th>
+                                                    </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                    {salesRows.length > 0 ? (
+                                                        salesRows.map((item) => (
+                                                            <tr key={item.id} className="border-b border-[#EFE7F4] last:border-0">
+                                                                <td className="whitespace-nowrap px-2.5 py-2.5 font-semibold text-[#1A1220]">
+                                                                    {formatDate(item.date)}
+                                                                </td>
+
+                                                                <td className="truncate px-2.5 py-2.5 font-mono text-[10px] font-semibold text-[#5F4E75]">
+                                                                    {item.recordId || "-"}
+                                                                </td>
+
+                                                                <td className="px-2.5 py-2.5 text-right font-semibold text-[#1A1220]">
+                                                                    {item.source === "pos"
+                                                                        ? formatPeso(item.posSales)
+                                                                        : "-"}
+                                                                </td>
+
+                                                                <td className="px-2.5 py-2.5 text-right font-semibold text-[#1A1220]">
+                                                                    {item.source === "booking"
+                                                                        ? formatPeso(item.bookingRevenue)
+                                                                        : "-"}
+                                                                </td>
+
+                                                                <td className="px-2.5 py-2.5 text-right font-semibold text-[#2B174C]">
+                                                                    {formatPeso(item.totalRevenue)}
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                    ) : (
+                                                        <tr>
+                                                            <td colSpan={5} className="px-2.5 py-8 text-center text-sm text-[#8A7A91]">
+                                                                No POS sales or booking revenue records found for the selected date range.
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </SectionCard>
+                                )}
+
+                                {salesView === "pos" && (
+                                    <SectionCard
+                                        title="POS Orders"
+                                        subtitle={`${posTransactions.length} POS order(s) recorded for the selected date range.`}
+                                    >
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full min-w-[880px] table-fixed text-sm">
+                                                <thead>
+                                                <tr className="border-b border-[#E6DDF0]">
+                                                    <th className="w-[17%] px-3 py-2 text-left text-[11px] font-medium tracking-widest text-[#806A8C]">Date</th>
+                                                    <th className="w-[26%] px-3 py-2 text-left text-[11px] font-medium tracking-widest text-[#806A8C]">Order ID</th>
+                                                    <th className="w-[42%] px-3 py-2 text-left text-[11px] font-medium tracking-widest text-[#806A8C]">Items</th>
+                                                    <th className="w-[15%] px-3 py-2 text-right text-[11px] font-medium tracking-widest text-[#806A8C]">Total</th>
                                                 </tr>
-                                            ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </SectionCard>
+                                                </thead>
+                                                <tbody>
+                                                {posTransactions.length > 0 ? (
+                                                    posTransactions.map((item) => (
+                                                        <tr key={item.id} className="border-b border-[#EFE7F4] last:border-0">
+                                                            <td className="whitespace-nowrap px-3 py-3 font-semibold text-[#1A1220]">
+                                                                {formatDate(item.date)}
+                                                            </td>
+
+                                                            <td className="truncate px-3 py-3 font-mono text-[11px] font-semibold text-[#5F4E75]">
+                                                                {item.reference || item.id}
+                                                            </td>
+
+                                                            <td className="px-3 py-3 text-[#6A5D6F]">
+                                                                <span className="block truncate">
+                                                                    {getSaleItemsLabel(item)}
+                                                                </span>
+                                                            </td>
+
+                                                            <td className="px-3 py-3 text-right font-semibold text-[#1A1220]">
+                                                                {formatPeso(item.amount)}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                ) : (
+                                                    <tr>
+                                                        <td colSpan={4} className="px-3 py-10 text-center text-sm text-[#8A7A91]">
+                                                            No POS orders found for the selected date range.
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </SectionCard>
+                                )}
+
+                                {salesView === "booking" && (
+                                    <SectionCard
+                                        title="Booking Revenue Records"
+                                        subtitle="Booking-linked order records are shown separately from POS orders, with their booking status."
+                                    >
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full min-w-[960px] table-fixed text-sm">
+                                                <thead>
+                                                <tr className="border-b border-[#E6DDF0]">
+                                                    <th className="w-[14%] px-3 py-2 text-left text-[11px] font-medium tracking-widest text-[#806A8C]">Date</th>
+                                                    <th className="w-[21%] px-3 py-2 text-left text-[11px] font-medium tracking-widest text-[#806A8C]">Reference No.</th>
+                                                    <th className="w-[18%] px-3 py-2 text-left text-[11px] font-medium tracking-widest text-[#806A8C]">Customer</th>
+                                                    <th className="w-[25%] px-3 py-2 text-left text-[11px] font-medium tracking-widest text-[#806A8C]">Package</th>
+                                                    <th className="w-[10%] px-3 py-2 text-right text-[11px] font-medium tracking-widest text-[#806A8C]">Status</th>
+                                                    <th className="w-[12%] px-3 py-2 text-right text-[11px] font-medium tracking-widest text-[#806A8C]">Revenue</th>
+                                                </tr>
+                                                </thead>
+                                                <tbody>
+                                                {bookingRevenueRecords.length > 0 ? (
+                                                    bookingRevenueRecords.map((item) => (
+                                                        <tr key={item.id} className="border-b border-[#EFE7F4] last:border-0">
+                                                            <td className="whitespace-nowrap px-3 py-3 font-semibold text-[#1A1220]">
+                                                                {formatDate(item.date)}
+                                                            </td>
+
+                                                            <td className="truncate px-3 py-3 text-[11px] font-semibold text-[#5F4E75]">
+                                                                {item.reference || item.id}
+                                                            </td>
+
+                                                            <td className="truncate px-3 py-3 text-[#6A5D6F]">
+                                                                {item.customer || "-"}
+                                                            </td>
+
+                                                            <td className="truncate px-3 py-3 text-[#6A5D6F]">
+                                                                {getSaleItemsLabel(item)}
+                                                            </td>
+
+                                                            <td className="px-3 py-3 text-right">
+                                                                <StatusBadge
+                                                                    status={item.statusLabel || "Completed"}
+                                                                />
+                                                            </td>
+
+                                                            <td className="px-3 py-3 text-right font-semibold text-[#1A1220]">
+                                                                {formatPeso(item.amount)}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                ) : (
+                                                    <tr>
+                                                        <td colSpan={6} className="px-3 py-10 text-center text-sm text-[#8A7A91]">
+                                                            No booking revenue records found for the selected date range.
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </SectionCard>
+                                )}
                             </div>
                         )}
 

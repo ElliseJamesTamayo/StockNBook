@@ -33,6 +33,83 @@ async function safeJson<T>(res: Response): Promise<T> {
     }
 }
 
+function getManilaDateParts(value: Date) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Manila",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(value);
+
+    const readPart = (type: Intl.DateTimeFormatPartTypes) =>
+        parts.find((part) => part.type === type)?.value || "";
+
+    return {
+        year: readPart("year"),
+        month: readPart("month"),
+        day: readPart("day"),
+    };
+}
+
+function getTransactionStoreCode() {
+    if (typeof window === "undefined") {
+        return "STORE";
+    }
+
+    const savedStoreCode =
+        sessionStorage.getItem("store_code") ||
+        sessionStorage.getItem("stocknbook_store_code") ||
+        "";
+
+    if (savedStoreCode.trim()) {
+        const normalizedCode = savedStoreCode
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, "");
+
+        return normalizedCode || "STORE";
+    }
+
+    const savedStoreName =
+        sessionStorage.getItem("store_name") ||
+        sessionStorage.getItem("stocknbook_store_name") ||
+        sessionStorage.getItem("business_name") ||
+        "STORE";
+
+    // Uses the first word of the business name as the short store code.
+    // Example: "Stellise Part Shop" becomes "STELLISE".
+    const shortStoreName = savedStoreName.trim().split(/\s+/)[0] || "STORE";
+
+    const normalizedName = shortStoreName
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "");
+
+    return normalizedName || "STORE";
+}
+
+function createPosTransactionId(existingOrders: Order[], now: Date) {
+    const { year, month, day } = getManilaDateParts(now);
+    const datePart = `${year}${month}${day}`;
+    const baseId = `${getTransactionStoreCode()}-POS-${datePart}`;
+
+    const matchingIds = existingOrders.filter((order) => {
+        const currentId = String(order.id || "").toUpperCase();
+
+        return (
+            currentId === baseId ||
+            new RegExp(`^${baseId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-\\d+$`).test(
+                currentId
+            )
+        );
+    });
+
+    // Every POS transaction always includes its daily sequence number.
+    // Examples:
+    // STELLISE-POS-20260629-01
+    // STELLISE-POS-20260629-02
+    return `${baseId}-${String(matchingIds.length + 1).padStart(2, "0")}`;
+}
+
 export function usePOS() {
     const [orders, setOrders] = useState<Order[]>(() => readOrders());
     const [cart, setCart] = useState<CartMap>({});
@@ -155,9 +232,6 @@ export function usePOS() {
                                 ? new Date(o.createdAt)
                                 : new Date();
 
-                    const rawBranchId = o.branchId ?? o.branch_id ?? null;
-                    const rawBranchName = o.branchName ?? o.branch_name ?? null;
-
                     return {
                         id: o.orderId,
                         customer: o.customerName,
@@ -177,10 +251,6 @@ export function usePOS() {
                             day: "numeric",
                             year: "numeric",
                         }),
-                        branchId: rawBranchId ? Number(rawBranchId) : null,
-                        branchName: rawBranchName
-                            ? String(rawBranchName)
-                            : null,
                     };
                 });
 
@@ -467,22 +537,20 @@ export function usePOS() {
             quantity: i.qty,
         }));
 
-        const todayKey = new Date().toLocaleDateString("en-US", {
+        const now = new Date();
+        const { year, month, day } = getManilaDateParts(now);
+
+        const todayKey = now.toLocaleDateString("en-US", {
             month: "long",
             day: "numeric",
             year: "numeric",
         });
 
-        const now = new Date();
-
-        const datePart = now.toISOString().slice(0, 10).replaceAll("-", "");
-        const timePart = now.toTimeString().slice(0, 8).replaceAll(":", "");
-
         const todaysCount = existingOrders.filter((o) => o.date === todayKey).length;
 
         const customerName = `Customer ${todaysCount + 1}`;
-        const orderId = `POS-${datePart}-${timePart}`;
-        const dbDate = now.toISOString().slice(0, 10);
+        const orderId = createPosTransactionId(existingOrders, now);
+        const dbDate = `${year}-${month}-${day}`;
 
         const newOrder: Order = {
             id: orderId,
@@ -490,8 +558,6 @@ export function usePOS() {
             items,
             total,
             date: todayKey,
-            branchId: activeBranchId ? Number(activeBranchId) : null,
-            branchName: activeBranchName || null,
         };
 
         const token = sessionStorage.getItem("token");
@@ -635,15 +701,11 @@ export function usePOS() {
             (p) => String(p.branchId || "") === String(branch.id)
         );
 
-        const branchOrders = orders.filter((order) => {
-            if (order.branchId) {
-                return String(order.branchId) === String(branch.id);
-            }
-
-            return order.items.some((item) =>
+        const branchOrders = orders.filter((order) =>
+            order.items.some((item) =>
                 branchBuyableItems.some((product) => product.name === item.name)
-            );
-        });
+            )
+        );
 
         const sales = branchOrders.reduce(
             (sum, order) => sum + Number(order.total || 0),

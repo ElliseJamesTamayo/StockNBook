@@ -2,15 +2,20 @@
 
 import { ReportsWorkspace } from "./_shared";
 
+type StaffReportsProps = {
+    assignedBranch: string;
+    storeName: string;
+};
+
 export default function StaffReports({
                                          assignedBranch,
-                                     }: {
-    assignedBranch: string;
-}) {
+                                         storeName,
+                                     }: StaffReportsProps) {
     return (
         <ReportsWorkspace
             initialRole="staff"
             assignedBranch={assignedBranch}
+            storeName={storeName}
         />
     );
 }

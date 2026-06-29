@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
     CalendarDays,
+    Check,
+    ChevronDown,
     ChevronRight,
     PackageSearch,
+    Search,
     TrendingUp,
 } from "lucide-react";
 import {
-    BranchForecastSelector,
     ForecastDetails,
     ForecastEmptyState,
     ForecastErrorState,
@@ -22,29 +24,160 @@ import {
     SummaryCard,
 } from "./_shared";
 
-type OwnerScope = "overall" | "branch";
-
-function ScopeButton({
-                         active,
-                         label,
-                         onClick,
-                     }: {
-    active: boolean;
-    label: string;
-    onClick: () => void;
+function OwnerForecastScopeSelector({
+                                        branches,
+                                        selectedBranchId,
+                                        onSelectBranch,
+                                    }: {
+    branches: Array<{ id: number; name: string }>;
+    selectedBranchId: number | null;
+    onSelectBranch: (branchId: number | null) => void;
 }) {
+    const [query, setQuery] = useState("");
+    const [isOpen, setIsOpen] = useState(false);
+
+    const selectedBranch =
+        branches.find((branch) => branch.id === selectedBranchId) ?? null;
+
+    const matchingBranches = useMemo(() => {
+        const normalizedQuery = query.trim().toLowerCase();
+
+        if (!normalizedQuery) {
+            return branches;
+        }
+
+        return branches.filter((branch) =>
+            branch.name.toLowerCase().includes(normalizedQuery)
+        );
+    }, [branches, query]);
+
+    const inputValue = isOpen
+        ? query
+        : selectedBranch?.name || "All Branches";
+
     return (
-        <button
-            type="button"
-            onClick={onClick}
-            className={`h-[40px] rounded-xl px-4 text-sm font-semibold transition ${
-                active
-                    ? "bg-[#2B174C] text-white shadow-sm"
-                    : "border border-[#E6DDF0] bg-white text-[#5F4E75] hover:bg-[#F7F1FF]"
-            }`}
-        >
-            {label}
-        </button>
+        <div className="relative w-full lg:w-[320px]">
+            <div className="relative">
+                <Search
+                    size={16}
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#806A8C]"
+                />
+
+                <input
+                    value={inputValue}
+                    onFocus={() => {
+                        setIsOpen(true);
+                        setQuery("");
+                    }}
+                    onBlur={() => {
+                        window.setTimeout(() => {
+                            setIsOpen(false);
+                            setQuery("");
+                        }, 150);
+                    }}
+                    onChange={(event) => {
+                        setQuery(event.target.value);
+                        setIsOpen(true);
+                    }}
+                    onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                            setIsOpen(false);
+                            setQuery("");
+                            event.currentTarget.blur();
+                        }
+                    }}
+                    placeholder="Search or select branch..."
+                    aria-label="Search or select forecast branch"
+                    aria-expanded={isOpen}
+                    aria-haspopup="listbox"
+                    className="h-[42px] w-full rounded-xl border border-[#E6DDF0] bg-white px-10 pr-10 text-sm font-semibold text-[#1A1220] outline-none shadow-sm transition placeholder:font-normal placeholder:text-[#9B8AAA] focus:border-[#2B174C] focus:ring-4 focus:ring-[#2B174C]/10"
+                />
+
+                <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                        setIsOpen((open) => !open);
+                        setQuery("");
+                    }}
+                    aria-label="Show forecast branch options"
+                    className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-[#2B174C] transition hover:bg-[#F7F1FF]"
+                >
+                    <ChevronDown
+                        size={16}
+                        className={
+                            isOpen
+                                ? "rotate-180 transition-transform"
+                                : "transition-transform"
+                        }
+                    />
+                </button>
+            </div>
+
+            {isOpen && (
+                <div
+                    role="listbox"
+                    className="absolute z-30 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-[#E6DDF0] bg-white p-1.5 shadow-lg"
+                >
+                    <button
+                        type="button"
+                        role="option"
+                        aria-selected={selectedBranchId === null}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                            onSelectBranch(null);
+                            setIsOpen(false);
+                            setQuery("");
+                        }}
+                        className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${
+                            selectedBranchId === null
+                                ? "bg-[#F0EAFE] font-semibold text-[#2B174C]"
+                                : "text-[#1A1220] hover:bg-[#F7F1FF]"
+                        }`}
+                    >
+                        <span>All Branches</span>
+                        {selectedBranchId === null && (
+                            <Check size={15} className="shrink-0" />
+                        )}
+                    </button>
+
+                    {matchingBranches.length > 0 ? (
+                        matchingBranches.map((branch) => {
+                            const isSelected = branch.id === selectedBranchId;
+
+                            return (
+                                <button
+                                    key={branch.id}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={isSelected}
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => {
+                                        onSelectBranch(branch.id);
+                                        setIsOpen(false);
+                                        setQuery("");
+                                    }}
+                                    className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${
+                                        isSelected
+                                            ? "bg-[#F0EAFE] font-semibold text-[#2B174C]"
+                                            : "text-[#1A1220] hover:bg-[#F7F1FF]"
+                                    }`}
+                                >
+                                    <span className="truncate">{branch.name}</span>
+                                    {isSelected && (
+                                        <Check size={15} className="shrink-0" />
+                                    )}
+                                </button>
+                            );
+                        })
+                    ) : (
+                        <p className="px-3 py-4 text-sm text-[#7A6A84]">
+                            No matching branch found.
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -61,7 +194,6 @@ export default function OwnerForecast({
                                           bookingLoading,
                                           bookingError,
                                       }: LiveForecastProps) {
-    const [scope, setScope] = useState<OwnerScope>("overall");
     const [activeTab, setActiveTab] = useState<ForecastTab>("inventory");
     const [selectedBranchId, setSelectedBranchId] = useState<number | null>(
         null
@@ -71,15 +203,6 @@ export default function OwnerForecast({
         () => (data ? buildBranchForecasts(data.items) : []),
         [data]
     );
-
-    useEffect(() => {
-        if (
-            branches.length > 0 &&
-            !branches.some((branch) => branch.id === selectedBranchId)
-        ) {
-            setSelectedBranchId(branches[0].id);
-        }
-    }, [branches, selectedBranchId]);
 
     if (loading && !data) {
         return <ForecastLoadingState />;
@@ -94,18 +217,17 @@ export default function OwnerForecast({
     }
 
     const selectedBranch =
-        branches.find((branch) => branch.id === selectedBranchId) ||
-        branches[0];
+        branches.find((branch) => branch.id === selectedBranchId) ?? null;
 
-    const branchData =
-        scope === "branch" && selectedBranch
-            ? buildScopedForecast(data, selectedBranch.id)
-            : data;
+    const isAllBranches = selectedBranch === null;
 
-    const scopedBookingData =
-        scope === "branch" && selectedBranch
-            ? buildScopedBookingForecast(bookingData, selectedBranch.id)
-            : bookingData;
+    const branchData = selectedBranch
+        ? buildScopedForecast(data, selectedBranch.id)
+        : data;
+
+    const scopedBookingData = selectedBranch
+        ? buildScopedBookingForecast(bookingData, selectedBranch.id)
+        : bookingData;
 
     const expectedBookings =
         scopedBookingData?.booking?.expectedBookings ??
@@ -116,9 +238,7 @@ export default function OwnerForecast({
         branchData.items.filter((item) => item.demandLevel === "HIGH").length;
 
     const activeScopeLabel =
-        scope === "overall"
-            ? "All branches"
-            : selectedBranch?.name || "Selected branch";
+        selectedBranch?.name || "All Branches";
 
     const highestDemand = Math.max(
         1,
@@ -135,7 +255,7 @@ export default function OwnerForecast({
             )}
 
             <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-4 shadow-sm">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex min-w-0 items-start gap-3">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EFE8F8] text-[#4E2C66]">
                             <TrendingUp size={18} />
@@ -143,31 +263,18 @@ export default function OwnerForecast({
 
                         <div>
                             <h2 className="text-[16px] font-bold text-[#1A1220]">
-                                Owner Demand Forecast Overview
+                                Forecasting Scope
                             </h2>
                             <p className="mt-0.5 text-xs leading-5 text-[#7A6A84]">
-                                Compare projected customer demand across branches, then
-                                open a branch to review product demand signals.
+                                All Branches is the default. Search or select a branch to view its forecast.
                             </p>
                         </div>
                     </div>
 
-                    <span className="inline-flex w-fit rounded-full border border-[#D8CBE7] bg-[#F7F1FF] px-3 py-1.5 text-xs font-semibold text-[#4E2C66]">
-                        {formatNumber(branches.length)} active branch
-                        {branches.length === 1 ? "" : "es"}
-                    </span>
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2 border-t border-[#E6DDF0] pt-4">
-                    <ScopeButton
-                        active={scope === "overall"}
-                        label="Overall Demand"
-                        onClick={() => setScope("overall")}
-                    />
-                    <ScopeButton
-                        active={scope === "branch"}
-                        label="By Branch"
-                        onClick={() => setScope("branch")}
+                    <OwnerForecastScopeSelector
+                        branches={branches}
+                        selectedBranchId={selectedBranchId}
+                        onSelectBranch={setSelectedBranchId}
                     />
                 </div>
             </section>
@@ -176,7 +283,7 @@ export default function OwnerForecast({
                 <SummaryCard
                     icon={<PackageSearch size={18} />}
                     title={
-                        scope === "overall"
+                        isAllBranches
                             ? "30-Day Customer Demand"
                             : "30-Day Branch Demand"
                     }
@@ -204,7 +311,7 @@ export default function OwnerForecast({
                 />
             </div>
 
-            {scope === "overall" ? (
+            {isAllBranches ? (
                 <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
                     <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-4 shadow-sm">
                         <div className="flex items-start justify-between gap-4">
@@ -247,7 +354,6 @@ export default function OwnerForecast({
                                             type="button"
                                             onClick={() => {
                                                 setSelectedBranchId(branch.id);
-                                                setScope("branch");
                                             }}
                                             className="block w-full text-left"
                                         >
@@ -313,7 +419,6 @@ export default function OwnerForecast({
                                         type="button"
                                         onClick={() => {
                                             setSelectedBranchId(branch.id);
-                                            setScope("branch");
                                         }}
                                         className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition hover:bg-[#FCFAFE]"
                                     >
@@ -352,27 +457,7 @@ export default function OwnerForecast({
                         )}
                     </section>
                 </div>
-            ) : (
-                <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-4 shadow-sm">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <h2 className="text-[16px] font-bold text-[#1A1220]">
-                                Select a branch
-                            </h2>
-                            <p className="mt-1 text-xs text-[#7A6A84]">
-                                Demand Level is calculated within each selected branch,
-                                so products are compared with relevant branch inventory.
-                            </p>
-                        </div>
-
-                        <BranchForecastSelector
-                            branches={branches}
-                            selectedBranchId={selectedBranch?.id || null}
-                            onSelectBranch={setSelectedBranchId}
-                        />
-                    </div>
-                </section>
-            )}
+            ) : null}
 
             <ForecastDetails
                 data={branchData}
@@ -387,8 +472,8 @@ export default function OwnerForecast({
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
                 title={
-                    scope === "overall"
-                        ? "Overall Demand Forecast Details"
+                    isAllBranches
+                        ? "All Branches Demand Forecast Details"
                         : `${selectedBranch?.name || "Branch"} Demand Forecast Details`
                 }
                 subtitle={`Scope: ${activeScopeLabel} · Product Demand uses ${branchData.scope.historyWeeks} weeks of completed POS sales.`}

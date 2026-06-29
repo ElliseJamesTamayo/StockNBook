@@ -11,43 +11,66 @@ type UserRole = "owner" | "manager" | "staff";
 type ReportSession = {
     role: UserRole;
     branch: string;
+    storeName: string;
 };
 
-const DEFAULT_BRANCH = "Makati Branch";
+const DEFAULT_BRANCH = "Assigned Branch";
+const DEFAULT_STORE_NAME = "Store";
 
 function subscribeToSession() {
     return () => {};
 }
 
 function getServerSessionSnapshot() {
-    return "manager\u0000Makati Branch";
+    return `manager\u0000${DEFAULT_BRANCH}\u0000${DEFAULT_STORE_NAME}`;
+}
+
+function readStoredValue(keys: string[]) {
+    for (const key of keys) {
+        const value =
+            sessionStorage.getItem(key) || localStorage.getItem(key) || "";
+
+        if (value.trim()) {
+            return value.trim();
+        }
+    }
+
+    return "";
 }
 
 function getClientSessionSnapshot() {
-    const storedRole = (sessionStorage.getItem("role") || "manager")
-        .trim()
-        .toLowerCase();
+    const savedRole = readStoredValue(["role"]).toLowerCase();
 
     const role: UserRole =
-        storedRole === "owner"
+        savedRole === "owner"
             ? "owner"
-            : storedRole === "staff"
+            : savedRole === "staff"
                 ? "staff"
                 : "manager";
 
     const branch =
-        sessionStorage.getItem("branch_name") ||
-        sessionStorage.getItem("stocknbook_branch_name") ||
-        sessionStorage.getItem("branchName") ||
-        sessionStorage.getItem("branch") ||
-        sessionStorage.getItem("assignedBranch") ||
-        DEFAULT_BRANCH;
+        readStoredValue([
+            "branch_name",
+            "stocknbook_branch_name",
+            "branchName",
+            "branch",
+            "assignedBranch",
+        ]) || DEFAULT_BRANCH;
 
-    return `${role}\u0000${branch}`;
+    const storeName =
+        readStoredValue([
+            "store_name",
+            "stocknbook_store_name",
+            "business_name",
+            "businessName",
+            "store",
+        ]) || DEFAULT_STORE_NAME;
+
+    return `${role}\u0000${branch}\u0000${storeName}`;
 }
 
 function parseSession(snapshot: string): ReportSession {
-    const [savedRole, savedBranch] = snapshot.split("\u0000");
+    const [savedRole, savedBranch, savedStoreName] = snapshot.split("\u0000");
 
     return {
         role:
@@ -57,6 +80,7 @@ function parseSession(snapshot: string): ReportSession {
                     ? "staff"
                     : "manager",
         branch: savedBranch || DEFAULT_BRANCH,
+        storeName: savedStoreName || DEFAULT_STORE_NAME,
     };
 }
 
@@ -67,8 +91,8 @@ export default function ReportsPage() {
         getServerSessionSnapshot
     );
 
-    const { role, branch } = parseSession(sessionSnapshot);
-    const workspaceKey = `${role}-${branch}`;
+    const { role, branch, storeName } = parseSession(sessionSnapshot);
+    const workspaceKey = `${role}-${storeName}-${branch}`;
 
     return (
         <div
@@ -82,6 +106,7 @@ export default function ReportsPage() {
                     <OwnerReports
                         key={workspaceKey}
                         assignedBranch={branch}
+                        storeName={storeName}
                     />
                 )}
 
@@ -89,6 +114,7 @@ export default function ReportsPage() {
                     <ManagerReports
                         key={workspaceKey}
                         assignedBranch={branch}
+                        storeName={storeName}
                     />
                 )}
 
@@ -96,6 +122,7 @@ export default function ReportsPage() {
                     <StaffReports
                         key={workspaceKey}
                         assignedBranch={branch}
+                        storeName={storeName}
                     />
                 )}
             </main>
