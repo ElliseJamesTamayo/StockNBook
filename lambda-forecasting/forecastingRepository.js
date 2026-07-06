@@ -59,6 +59,47 @@ function getInventoryKey(productId, variantId) {
     return `${productId}:${variantId || "product"}`;
 }
 
+/*
+  Returns the inventory item's key for a POS line.
+
+  Preferred behavior is an exact product + variant match. The fallback keeps
+  older/demo POS records usable when they have a valid product_id but have
+  no variant_id or an outdated variant_id.
+*/
+function resolveInventoryItemKey(
+    inventoryByProduct,
+    productId,
+    variantId
+) {
+    const parsedProductId = toPositiveInteger(productId);
+
+    if (!parsedProductId) {
+        return null;
+    }
+
+    const candidates = inventoryByProduct.get(parsedProductId) || [];
+
+    if (candidates.length === 0) {
+        return null;
+    }
+
+    const parsedVariantId = toPositiveInteger(variantId);
+
+    const exactMatch = candidates.find(
+        (item) => toPositiveInteger(item.variantId) === parsedVariantId
+    );
+
+    if (exactMatch) {
+        return exactMatch.id;
+    }
+
+    const productLevelItem = candidates.find(
+        (item) => !toPositiveInteger(item.variantId)
+    );
+
+    return (productLevelItem || candidates[0]).id;
+}
+
 function getStartOfWeekUTC(date) {
     const result = new Date(
         Date.UTC(
@@ -68,7 +109,6 @@ function getStartOfWeekUTC(date) {
         )
     );
 
-    // Monday is the first day of the week.
     const mondayOffset = (result.getUTCDay() + 6) % 7;
     result.setUTCDate(result.getUTCDate() - mondayOffset);
 
@@ -102,12 +142,24 @@ function getWeekWindows(historyWeeks = 12, today = new Date()) {
 
 function getMonthRange(historyMonths = 12, today = new Date()) {
     const count = Math.max(1, Number(historyMonths) || 12);
-    const end = new Date(
-        Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+
+    // Use completed calendar months only.
+    // Example on July 1, 2026:
+    // Start: July 1, 2025
+    // End: June 30, 2026
+    const currentMonthStart = new Date(
+        Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)
     );
 
+    const end = new Date(currentMonthStart.getTime());
+    end.setUTCDate(end.getUTCDate() - 1);
+
     const start = new Date(
-        Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - (count - 1), 1)
+        Date.UTC(
+            end.getUTCFullYear(),
+            end.getUTCMonth() - (count - 1),
+            1
+        )
     );
 
     return {
@@ -116,11 +168,15 @@ function getMonthRange(historyMonths = 12, today = new Date()) {
     };
 }
 
-
 function getUpcomingBookingRange(periodDays = 30, today = new Date()) {
     const days = Math.max(1, Number(periodDays) || 30);
+
     const start = new Date(
-        Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+        Date.UTC(
+            today.getUTCFullYear(),
+            today.getUTCMonth(),
+            today.getUTCDate()
+        )
     );
 
     return {
@@ -228,10 +284,10 @@ async function ensureBranchBelongsToStore(connection, branchId, storeId) {
 
     const [rows] = await connection.execute(
         `SELECT id
-         FROM branches
-         WHERE id = ?
-           AND store_id = ?
-             LIMIT 1`,
+FROM branches
+WHERE id = ?
+    AND store_id = ?
+        LIMIT 1`,
         [parsedBranchId, parsedStoreId]
     );
 
@@ -240,25 +296,25 @@ async function ensureBranchBelongsToStore(connection, branchId, storeId) {
 
 async function getInventoryItems(connection, { storeId, branchId = null }) {
     let query = `
-        SELECT
-            p.id AS product_id,
-            p.store_id,
-            p.branch_id,
-            p.name AS product_name,
-            p.category,
-            p.stock AS product_stock,
-            p.alert_level AS product_alert_level,
-            pv.id AS variant_id,
-            pv.variant_values,
-            pv.stock AS variant_stock,
-            pv.alert_level AS variant_alert_level,
-            b.branch_name
-        FROM products p
-                 LEFT JOIN product_variants pv
-                           ON pv.product_id = p.id
-                 LEFT JOIN branches b
-                           ON b.id = p.branch_id
-        WHERE p.store_id = ?
+SELECT
+p.id AS product_id,
+    p.store_id,
+    p.branch_id,
+    p.name AS product_name,
+    p.category,
+    p.stock AS product_stock,
+    p.alert_level AS product_alert_level,
+    pv.id AS variant_id,
+    pv.variant_values,
+    pv.stock AS variant_stock,
+    pv.alert_level AS variant_alert_level,
+    b.branch_name
+FROM products p
+LEFT JOIN product_variants pv
+ON pv.product_id = p.id
+LEFT JOIN branches b
+ON b.id = p.branch_id
+WHERE p.store_id = ?
     `;
 
     const params = [storeId];
@@ -283,27 +339,27 @@ async function getInventoryItems(connection, { storeId, branchId = null }) {
 
         const itemName = isVariant
             ? `${row.product_name} / ${variantName}`
-            : String(row.product_name || "Unnamed Product");
+: String(row.product_name || "Unnamed Product");
 
-        return {
-            id: getInventoryKey(productId, variantId),
-            productId,
-            variantId,
-            productName: String(row.product_name || ""),
-            variantName,
-            itemName,
-            category: String(row.category || "Uncategorized"),
-            branchId: Number(row.branch_id),
-            branchName: String(row.branch_name || "Unnamed Branch"),
-            isVariant,
-            onHandQuantity: isVariant
-                ? toSafeNumber(row.variant_stock)
-                : toSafeNumber(row.product_stock),
-            lowStockThreshold: isVariant
-                ? toSafeNumber(row.variant_alert_level)
-                : toSafeNumber(row.product_alert_level),
-        };
-    });
+return {
+    id: getInventoryKey(productId, variantId),
+    productId,
+    variantId,
+    productName: String(row.product_name || ""),
+    variantName,
+    itemName,
+    category: String(row.category || "Uncategorized"),
+    branchId: Number(row.branch_id),
+    branchName: String(row.branch_name || "Unnamed Branch"),
+    isVariant,
+    onHandQuantity: isVariant
+        ? toSafeNumber(row.variant_stock)
+        : toSafeNumber(row.product_stock),
+    lowStockThreshold: isVariant
+        ? toSafeNumber(row.variant_alert_level)
+        : toSafeNumber(row.product_alert_level),
+};
+});
 }
 
 async function getHistoricalSales(
@@ -317,8 +373,8 @@ async function getHistoricalSales(
             oi.quantity,
             DATE_FORMAT(o.order_date, '%Y-%m-%d') AS order_date
         FROM orders o
-                 INNER JOIN order_items oi
-                            ON oi.order_id = o.order_id
+        INNER JOIN order_items oi
+            ON oi.order_id = o.order_id
         WHERE o.store_id = ?
           AND oi.product_id IS NOT NULL
           AND o.order_date BETWEEN ? AND ?
@@ -353,8 +409,8 @@ async function getMonthlySalesSummary(
             SUM(oi.quantity) AS total_units,
             COUNT(DISTINCT o.order_id) AS order_count
         FROM orders o
-                 INNER JOIN order_items oi
-                            ON oi.order_id = o.order_id
+        INNER JOIN order_items oi
+            ON oi.order_id = o.order_id
         WHERE o.store_id = ?
           AND oi.product_id IS NOT NULL
           AND o.order_date BETWEEN ? AND ?
@@ -381,13 +437,6 @@ async function getMonthlySalesSummary(
     }));
 }
 
-
-
-/*
-  Returns monthly POS demand for each product or variant. The Forecasting
-  Lambda uses this only for item-level seasonal signals; branch-wide seasonal
-  analysis continues to use getMonthlySalesSummary().
-*/
 async function getItemMonthlySalesSummary(
     connection,
     { storeId, branchId = null, startDate, endDate }
@@ -400,8 +449,8 @@ async function getItemMonthlySalesSummary(
             SUM(oi.quantity) AS total_units,
             COUNT(DISTINCT o.order_id) AS order_count
         FROM orders o
-                 INNER JOIN order_items oi
-                            ON oi.order_id = o.order_id
+        INNER JOIN order_items oi
+            ON oi.order_id = o.order_id
         WHERE o.store_id = ?
           AND oi.product_id IS NOT NULL
           AND o.order_date BETWEEN ? AND ?
@@ -435,9 +484,20 @@ async function getItemMonthlySalesSummary(
 
 function buildItemMonthlySalesMap(inventoryItems, itemMonthlySales) {
     const monthlySalesMap = new Map();
+    const inventoryByProduct = new Map();
 
     inventoryItems.forEach((item) => {
         monthlySalesMap.set(item.id, []);
+
+        const productId = toPositiveInteger(item.productId);
+
+        if (!productId) {
+            return;
+        }
+
+        const currentItems = inventoryByProduct.get(productId) || [];
+        currentItems.push(item);
+        inventoryByProduct.set(productId, currentItems);
     });
 
     itemMonthlySales.forEach((sale) => {
@@ -445,8 +505,17 @@ function buildItemMonthlySalesMap(inventoryItems, itemMonthlySales) {
             return;
         }
 
-        const key = getInventoryKey(sale.productId, sale.variantId);
-        const current = monthlySalesMap.get(key);
+        const itemKey = resolveInventoryItemKey(
+            inventoryByProduct,
+            sale.productId,
+            sale.variantId
+        );
+
+        if (!itemKey) {
+            return;
+        }
+
+        const current = monthlySalesMap.get(itemKey);
 
         if (current) {
             current.push({
@@ -537,12 +606,23 @@ function buildWeeklyDemandMap(inventoryItems, historicalSales, weekWindows) {
     );
 
     const demandMap = new Map();
+    const inventoryByProduct = new Map();
 
     inventoryItems.forEach((item) => {
         demandMap.set(
             item.id,
             Array.from({ length: weekWindows.length }, () => 0)
         );
+
+        const productId = toPositiveInteger(item.productId);
+
+        if (!productId) {
+            return;
+        }
+
+        const currentItems = inventoryByProduct.get(productId) || [];
+        currentItems.push(item);
+        inventoryByProduct.set(productId, currentItems);
     });
 
     historicalSales.forEach((sale) => {
@@ -563,11 +643,20 @@ function buildWeeklyDemandMap(inventoryItems, historicalSales, weekWindows) {
             return;
         }
 
-        const itemKey = getInventoryKey(sale.productId, sale.variantId);
+        const itemKey = resolveInventoryItemKey(
+            inventoryByProduct,
+            sale.productId,
+            sale.variantId
+        );
+
+        if (!itemKey) {
+            return;
+        }
+
         const currentDemand = demandMap.get(itemKey);
 
         if (currentDemand) {
-            currentDemand[weekIndex] += sale.quantity;
+            currentDemand[weekIndex] += toSafeNumber(sale.quantity);
         }
     });
 

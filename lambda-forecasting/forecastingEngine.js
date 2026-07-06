@@ -5,7 +5,11 @@ function toSafeNumber(value) {
 
 function round(value, decimals = 2) {
     const multiplier = 10 ** decimals;
-    return Math.round((toSafeNumber(value) + Number.EPSILON) * multiplier) / multiplier;
+
+    return (
+        Math.round((toSafeNumber(value) + Number.EPSILON) * multiplier) /
+        multiplier
+    );
 }
 
 function clamp(value, minimum, maximum) {
@@ -13,39 +17,59 @@ function clamp(value, minimum, maximum) {
 }
 
 function totalDemand(weeks = []) {
-    return weeks.reduce((total, value) => total + toSafeNumber(value), 0);
+    return weeks.reduce(
+        (total, value) => total + toSafeNumber(value),
+        0
+    );
 }
 
 function calculateWeightedMovingAverage(weeklyDemand = []) {
-    const recentWeeks = weeklyDemand.slice(-3);
+    const normalizedDemand = weeklyDemand.map((value) =>
+        Math.max(0, toSafeNumber(value))
+    );
 
-    if (recentWeeks.length === 0) {
-        return 0;
+    function weightedAverage(values = []) {
+        if (values.length === 0) {
+            return 0;
+        }
+
+        const baseWeights = [0.2, 0.3, 0.5];
+        const weights = baseWeights.slice(3 - values.length);
+
+        const weightedTotal = values.reduce(
+            (total, demand, index) =>
+                total + demand * weights[index],
+            0
+        );
+
+        const totalWeight = weights.reduce(
+            (total, weight) => total + weight,
+            0
+        );
+
+        return totalWeight > 0 ? weightedTotal / totalWeight : 0;
     }
 
-    const baseWeights = [0.2, 0.3, 0.5];
-    const weights = baseWeights.slice(3 - recentWeeks.length);
+    const latestThreeWeeks = normalizedDemand.slice(-3);
 
-    const weightedTotal = recentWeeks.reduce(
-        (total, demand, index) =>
-            total + toSafeNumber(demand) * weights[index],
-        0
-    );
+    /*
+      Normal behavior: prioritize the latest three calendar weeks.
+      Party-supply sales can be intermittent, however. When the latest
+      three weeks are quiet but the 12-week window contains completed POS
+      sales, use the latest three active selling weeks instead of returning
+      a misleading zero-demand forecast.
+    */
+    if (latestThreeWeeks.some((value) => value > 0)) {
+        return weightedAverage(latestThreeWeeks);
+    }
 
-    const totalWeight = weights.reduce(
-        (total, weight) => total + weight,
-        0
-    );
+    const latestActiveWeeks = normalizedDemand
+        .filter((value) => value > 0)
+        .slice(-3);
 
-    return totalWeight > 0 ? weightedTotal / totalWeight : 0;
+    return weightedAverage(latestActiveWeeks);
 }
 
-/*
-  Compares the latest 4 weeks with the preceding 4 weeks.
-
-  The growth factor is intentionally limited to 0.70–1.30. This prevents a
-  single unusual transaction from making the 30-day forecast unrealistic.
-*/
 function calculateGrowthMetrics(weeklyDemand = []) {
     const recentFourWeekDemand = totalDemand(weeklyDemand.slice(-4));
     const previousFourWeekDemand = totalDemand(weeklyDemand.slice(-8, -4));
@@ -75,7 +99,10 @@ function calculateGrowthMetrics(weeklyDemand = []) {
         previousFourWeekDemand;
 
     const growthPercent = round(rawGrowthRate * 100, 2);
-    const growthFactor = round(clamp(1 + rawGrowthRate, 0.7, 1.3), 2);
+    const growthFactor = round(
+        clamp(1 + rawGrowthRate, 0.7, 1.3),
+        2
+    );
 
     let growthTrend = "STABLE";
 
@@ -94,16 +121,13 @@ function calculateGrowthMetrics(weeklyDemand = []) {
     };
 }
 
-/*
-  Classifies movement using the number of weeks with at least one POS sale
-  within the current 12-week history window.
-*/
 function classifyMovement(weeklyDemand = []) {
     const activeSalesWeeks = weeklyDemand.filter(
         (quantity) => toSafeNumber(quantity) > 0
     ).length;
 
     const totalUnitsSold = totalDemand(weeklyDemand);
+
     const averageWeeklyDemand =
         weeklyDemand.length > 0
             ? totalUnitsSold / weeklyDemand.length
@@ -127,19 +151,13 @@ function classifyMovement(weeklyDemand = []) {
     };
 }
 
-
-/*
-  Demand Level is intentionally separate from stock risk.
-  It ranks each item by its projected 30-day customer demand within the same
-  branch, so a product is not labelled "High demand" merely because it is low
-  in stock.
-*/
 function assignDemandLevels(items = []) {
     const branchGroups = new Map();
 
     items.forEach((item) => {
         const branchKey = String(item.branchId || "unassigned");
         const current = branchGroups.get(branchKey) || [];
+
         current.push(item);
         branchGroups.set(branchKey, current);
     });
@@ -159,10 +177,12 @@ function assignDemandLevels(items = []) {
             );
 
         const trackedDemandItems = rankedItems.length;
+
         const highDemandCount = Math.max(
             1,
             Math.ceil(trackedDemandItems * 0.25)
         );
+
         const moderateDemandLimit = Math.max(
             highDemandCount,
             Math.ceil(trackedDemandItems * 0.7)
@@ -178,6 +198,7 @@ function assignDemandLevels(items = []) {
 
             let demandLevel = "NO_RECENT_DEMAND";
             let demandRank = null;
+
             let demandLevelReason =
                 "No completed POS demand was recorded in the current 12-week history window.";
 
@@ -209,11 +230,18 @@ function assignDemandLevels(items = []) {
     return output;
 }
 
-/*
-  Evaluates an item's current calendar-month demand against its own monthly
-  POS history. It is deliberately labelled as preliminary when only one year
-  of history exists; this prevents the UI from overstating a seasonal pattern.
-*/
+function getMonthLabel(monthNumber) {
+    return new Intl.DateTimeFormat("en-US", {
+        month: "long",
+    }).format(new Date(Date.UTC(2026, monthNumber - 1, 1)));
+}
+
+function formatSeasonalNumber(value) {
+    return new Intl.NumberFormat("en-US", {
+        maximumFractionDigits: 2,
+    }).format(toSafeNumber(value));
+}
+
 function buildItemSeasonality(
     monthlySales = [],
     {
@@ -227,9 +255,12 @@ function buildItemSeasonality(
             totalUnits: Math.max(0, toSafeNumber(row.totalUnits)),
         }))
         .filter((row) => /^\d{4}-\d{2}$/.test(row.monthKey))
-        .sort((first, second) => first.monthKey.localeCompare(second.monthKey));
+        .sort((first, second) =>
+            first.monthKey.localeCompare(second.monthKey)
+        );
 
     const historyMonthsAvailable = normalizedRows.length;
+
     const totalUnitsSold = normalizedRows.reduce(
         (total, row) => total + row.totalUnits,
         0
@@ -247,6 +278,7 @@ function buildItemSeasonality(
 
         if (monthNumber >= 1 && monthNumber <= 12) {
             const bucket = monthBuckets[monthNumber - 1];
+
             bucket.totalUnits += row.totalUnits;
             bucket.observations += 1;
         }
@@ -267,8 +299,11 @@ function buildItemSeasonality(
         0,
         11
     );
+
     const currentMonth = seasonalMonths[currentIndex];
+
     const averageMonthlyDemand = round(totalUnitsSold / 12, 2);
+
     const rankedMonths = [...seasonalMonths]
         .filter((month) => month.totalUnits > 0)
         .sort(
@@ -290,6 +325,7 @@ function buildItemSeasonality(
     }
 
     const historyYearsAvailable = currentMonth.observations;
+
     const historyLabel =
         historyYearsAvailable > 1
             ? `${historyYearsAvailable} years of ${currentMonth.month} sales`
@@ -339,19 +375,37 @@ function buildItemSeasonality(
 
     let status = "TYPICAL_SEASON";
     let label = `Typical demand in ${currentMonth.month}`;
+
     let detail =
-        `${currentMonth.month} has ${formatSeasonalNumber(currentMonthUnits)} recorded units compared with a typical monthly level of ${formatSeasonalNumber(averageMonthlyDemand)} units.`;
+        `${currentMonth.month} has ${formatSeasonalNumber(
+            currentMonthUnits
+        )} recorded units compared with a typical monthly level of ${formatSeasonalNumber(
+            averageMonthlyDemand
+        )} units.`;
 
     if (currentMonthUnits >= highSeasonThreshold && currentMonthUnits > 0) {
         status = "PEAK_SEASON";
         label = `Peak demand in ${currentMonth.month}`;
+
         detail =
-            `${currentMonth.month} has ${formatSeasonalNumber(currentMonthUnits)} recorded units, above this item's typical monthly level of ${formatSeasonalNumber(averageMonthlyDemand)} units.`;
-    } else if (currentMonthUnits <= lowSeasonThreshold && averageMonthlyDemand > 0) {
+            `${currentMonth.month} has ${formatSeasonalNumber(
+                currentMonthUnits
+            )} recorded units, above this item's typical monthly level of ${formatSeasonalNumber(
+                averageMonthlyDemand
+            )} units.`;
+    } else if (
+        currentMonthUnits <= lowSeasonThreshold &&
+        averageMonthlyDemand > 0
+    ) {
         status = "OFF_PEAK";
         label = `Lower demand in ${currentMonth.month}`;
+
         detail =
-            `${currentMonth.month} has ${formatSeasonalNumber(currentMonthUnits)} recorded units, below this item's typical monthly level of ${formatSeasonalNumber(averageMonthlyDemand)} units.`;
+            `${currentMonth.month} has ${formatSeasonalNumber(
+                currentMonthUnits
+            )} recorded units, below this item's typical monthly level of ${formatSeasonalNumber(
+                averageMonthlyDemand
+            )} units.`;
     }
 
     const isPreliminary = historyYearsAvailable < 2;
@@ -375,12 +429,6 @@ function buildItemSeasonality(
     };
 }
 
-function formatSeasonalNumber(value) {
-    return new Intl.NumberFormat("en-US", {
-        maximumFractionDigits: 2,
-    }).format(toSafeNumber(value));
-}
-
 function calculateStockoutMetrics({
                                       availableQuantity = 0,
                                       forecastedDemand = 0,
@@ -395,6 +443,7 @@ function calculateStockoutMetrics({
     const safeLeadTimeDays = Math.max(0, toSafeNumber(leadTimeDays));
 
     const dailyDemand = demand / safePeriodDays;
+
     const reorderPoint = Math.ceil(
         dailyDemand * safeLeadTimeDays + safeSafetyStock
     );
@@ -454,7 +503,9 @@ function buildInventoryForecast({
                                     periodDays = 30,
                                     leadTimeDays = 3,
                                 }) {
-    const baseWeeklyForecast = calculateWeightedMovingAverage(weeklyDemand);
+    const baseWeeklyForecast =
+        calculateWeightedMovingAverage(weeklyDemand);
+
     const growth = calculateGrowthMetrics(weeklyDemand);
     const movement = classifyMovement(weeklyDemand);
 
@@ -467,9 +518,11 @@ function buildInventoryForecast({
 
     const onHand = Math.max(0, toSafeNumber(onHandQuantity));
     const allocated = Math.max(0, toSafeNumber(allocatedQuantity));
+
     const availableQuantity = Math.max(0, onHand - allocated);
 
     const safeSafetyStock = Math.max(0, toSafeNumber(safetyStock));
+
     const safeLowStockThreshold = Math.max(
         0,
         toSafeNumber(lowStockThreshold)
@@ -488,10 +541,6 @@ function buildInventoryForecast({
         leadTimeDays,
     });
 
-    /*
-      Keep LOW / RISK / STABLE for backward compatibility with the current UI.
-      More precise time-based alerts are returned separately in timeAlert.
-    */
     let status = "STABLE";
 
     if (
@@ -526,17 +575,6 @@ function buildInventoryForecast({
     };
 }
 
-function getMonthLabel(monthNumber) {
-    return new Intl.DateTimeFormat("en-US", {
-        month: "long",
-    }).format(new Date(Date.UTC(2026, monthNumber - 1, 1)));
-}
-
-/*
-  A seasonal result is only marked READY when at least 12 distinct months of
-  completed POS history are available. This prevents the UI from claiming a
-  real seasonal pattern from a short history.
-*/
 function buildSeasonalAnalysis(monthlySales = [], minimumHistoryMonths = 12) {
     const normalizedRows = monthlySales
         .map((row) => ({
@@ -550,6 +588,7 @@ function buildSeasonalAnalysis(monthlySales = [], minimumHistoryMonths = 12) {
         );
 
     const historyMonthsAvailable = normalizedRows.length;
+
     const totalUnitsSold = normalizedRows.reduce(
         (total, row) => total + row.totalUnits,
         0
@@ -577,7 +616,8 @@ function buildSeasonalAnalysis(monthlySales = [], minimumHistoryMonths = 12) {
             historyMonthsAvailable,
             totalUnitsSold,
             monthlyHistory,
-            message: `Seasonal analysis needs at least ${minimumHistoryMonths} months of POS history. Only ${historyMonthsAvailable} month(s) are currently available.`,
+            message:
+                `Seasonal analysis needs at least ${minimumHistoryMonths} months of POS history. Only ${historyMonthsAvailable} month(s) are currently available.`,
             seasonalMonths: [],
             peakMonths: [],
             recentTrend: "INSUFFICIENT_HISTORY",
@@ -596,6 +636,7 @@ function buildSeasonalAnalysis(monthlySales = [], minimumHistoryMonths = 12) {
 
         if (monthNumber >= 1 && monthNumber <= 12) {
             const bucket = monthBuckets[monthNumber - 1];
+
             bucket.totalUnits += row.totalUnits;
             bucket.observations += 1;
         }
@@ -622,6 +663,7 @@ function buildSeasonalAnalysis(monthlySales = [], minimumHistoryMonths = 12) {
     const recentThreeMonths = totalDemand(
         normalizedRows.slice(-3).map((row) => row.totalUnits)
     );
+
     const previousThreeMonths = totalDemand(
         normalizedRows.slice(-6, -3).map((row) => row.totalUnits)
     );
@@ -662,8 +704,10 @@ function buildSeasonalAnalysis(monthlySales = [], minimumHistoryMonths = 12) {
             "Seasonal analysis is based on completed POS sales grouped by calendar month.",
     };
 }
+
 function toDateKey(value) {
     const raw = String(value || "").slice(0, 10);
+
     return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
 }
 
@@ -714,11 +758,6 @@ function createBookingAllocationKey(productId, variantId) {
     return `${productId}:${variantId || "product"}`;
 }
 
-/*
-  Booking Forecast Version 1 is schedule-based:
-  it uses confirmed and preparing bookings already scheduled in the next
-  30 days. This is intentionally not a guessed historical booking number.
-*/
 function buildBookingForecast(bookings = [], { periodDays = 30 } = {}) {
     const activeBookings = bookings
         .filter((booking) => {
@@ -731,8 +770,11 @@ function buildBookingForecast(bookings = [], { periodDays = 30 } = {}) {
             );
         })
         .sort((first, second) => {
-            const firstDate = `${first.eventDate || ""} ${first.eventTime || ""}`;
-            const secondDate = `${second.eventDate || ""} ${second.eventTime || ""}`;
+            const firstDate =
+                `${first.eventDate || ""} ${first.eventTime || ""}`;
+
+            const secondDate =
+                `${second.eventDate || ""} ${second.eventTime || ""}`;
 
             return firstDate.localeCompare(secondDate);
         });
@@ -760,9 +802,12 @@ function buildBookingForecast(bookings = [], { periodDays = 30 } = {}) {
 
         const dateKey = toDateKey(booking.eventDate);
         const timeKey = String(booking.eventTime || "").trim();
+
         const weekday = formatWeekdayLabel(dateKey);
+
         const packageName =
-            String(booking.packageName || "").trim() || "Custom / Unspecified";
+            String(booking.packageName || "").trim() ||
+            "Custom / Unspecified";
 
         if (dateKey) {
             const current = byDate.get(dateKey) || {
@@ -810,7 +855,10 @@ function buildBookingForecast(bookings = [], { periodDays = 30 } = {}) {
         }
 
         allocations.forEach((allocation) => {
-            const quantity = Math.max(0, toSafeNumber(allocation.quantity));
+            const quantity = Math.max(
+                0,
+                toSafeNumber(allocation.quantity)
+            );
 
             if (quantity <= 0) {
                 return;
@@ -819,14 +867,20 @@ function buildBookingForecast(bookings = [], { periodDays = 30 } = {}) {
             allocatedUnits += quantity;
 
             const productId = Number(allocation.productId || 0);
-            const variantId = Number(allocation.variantId || 0) || null;
+
+            const variantId =
+                Number(allocation.variantId || 0) || null;
 
             if (!productId) {
                 unlinkedAllocationEntries += 1;
                 return;
             }
 
-            const key = createBookingAllocationKey(productId, variantId);
+            const key = createBookingAllocationKey(
+                productId,
+                variantId
+            );
+
             const current = allocatedInventory.get(key) || {
                 productId,
                 variantId,
@@ -841,26 +895,29 @@ function buildBookingForecast(bookings = [], { periodDays = 30 } = {}) {
         });
     });
 
-    const peakBookingDate = [...byDate.values()]
-        .sort(
-            (first, second) =>
-                second.bookings - first.bookings ||
-                first.date.localeCompare(second.date)
-        )[0] || null;
+    const peakBookingDate =
+        [...byDate.values()]
+            .sort(
+                (first, second) =>
+                    second.bookings - first.bookings ||
+                    first.date.localeCompare(second.date)
+            )[0] || null;
 
-    const peakBookingTime = [...byTime.values()]
-        .sort(
-            (first, second) =>
-                second.bookings - first.bookings ||
-                first.time.localeCompare(second.time)
-        )[0] || null;
+    const peakBookingTime =
+        [...byTime.values()]
+            .sort(
+                (first, second) =>
+                    second.bookings - first.bookings ||
+                    first.time.localeCompare(second.time)
+            )[0] || null;
 
-    const peakBookingDay = [...byWeekday.values()]
-        .sort(
-            (first, second) =>
-                second.bookings - first.bookings ||
-                first.weekday.localeCompare(second.weekday)
-        )[0] || null;
+    const peakBookingDay =
+        [...byWeekday.values()]
+            .sort(
+                (first, second) =>
+                    second.bookings - first.bookings ||
+                    first.weekday.localeCompare(second.weekday)
+            )[0] || null;
 
     const topPackages = [...packages.values()]
         .sort(

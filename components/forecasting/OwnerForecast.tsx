@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
     CalendarDays,
     Check,
@@ -17,10 +17,13 @@ import {
     ForecastLoadingState,
     type ForecastTab,
     type LiveForecastProps,
+    type SeasonalApiResponse,
+    type SeasonalDateRange,
     buildBranchForecasts,
     buildScopedBookingForecast,
     buildScopedForecast,
     formatNumber,
+    ProductDemandSummaryCards,
     SummaryCard,
 } from "./_shared";
 
@@ -181,6 +184,187 @@ function OwnerForecastScopeSelector({
     );
 }
 
+function formatOwnerMonthLabel(value: string) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(value || ""))) {
+        return "—";
+    }
+
+    return new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        year: "numeric",
+    }).format(new Date(`${value}-01T00:00:00.000Z`));
+}
+
+function formatOwnerSeasonalRange(range: SeasonalDateRange) {
+    return `${formatOwnerMonthLabel(range.startMonth)} – ${formatOwnerMonthLabel(
+        range.endMonth
+    )}`;
+}
+
+function formatOwnerTrend(value: string) {
+    return String(value || "")
+        .replaceAll("_", " ")
+        .toLowerCase()
+        .replace(/\b\w/g, (letter) => letter.toUpperCase()) || "No trend available";
+}
+
+function formatOwnerSeasonalTrend(seasonalData: SeasonalApiResponse | null) {
+    const seasonal = seasonalData?.seasonal;
+
+    if (!seasonal) {
+        return "Loading...";
+    }
+
+    if (
+        seasonal.recentTrendPercent === null ||
+        seasonal.recentTrendPercent === undefined ||
+        !Number.isFinite(Number(seasonal.recentTrendPercent))
+    ) {
+        return formatOwnerTrend(seasonal.recentTrend);
+    }
+
+    const percent = Math.round(Number(seasonal.recentTrendPercent));
+    return `${percent >= 0 ? "+" : ""}${percent}% · ${formatOwnerTrend(
+        seasonal.recentTrend
+    )}`;
+}
+
+function formatOwnerPeakMonths(seasonalData: SeasonalApiResponse | null) {
+    const months = seasonalData?.seasonal?.peakMonths || [];
+
+    if (months.length === 0) {
+        return "No peak month yet";
+    }
+
+    return months
+        .slice(0, 2)
+        .map((month) => month.month)
+        .join(" and ");
+}
+
+async function requestOwnerScopedSeasonalForecast(
+    branchId: number,
+    range: SeasonalDateRange
+): Promise<SeasonalApiResponse> {
+    const token =
+        typeof window !== "undefined"
+            ? sessionStorage.getItem("token")
+            : null;
+
+    if (!token) {
+        throw new Error("Your login session is missing. Please log in again.");
+    }
+
+    const response = await fetch("/api/forecasting", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+            action: "get_seasonal_analysis",
+            branch_id: branchId,
+            seasonalStartMonth: range.startMonth,
+            seasonalEndMonth: range.endMonth,
+        }),
+        cache: "no-store",
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as
+        | SeasonalApiResponse
+        | { error?: string; details?: string };
+
+    if (!response.ok) {
+        const errorPayload = payload as { error?: string; details?: string };
+        const details = errorPayload.details ? ` ${errorPayload.details}` : "";
+        throw new Error(
+            `${errorPayload.error || "Unable to load branch seasonal data."}${details}`
+        );
+    }
+
+    const seasonalPayload = payload as SeasonalApiResponse;
+
+    if (!seasonalPayload.success || !seasonalPayload.seasonal) {
+        throw new Error(
+            "The Seasonal Demand Patterns service returned an invalid response."
+        );
+    }
+
+    return seasonalPayload;
+}
+
+function OwnerSeasonalSummaryCards({
+                                       activeScopeLabel,
+                                       seasonalData,
+                                       seasonalLoading,
+                                       seasonalError,
+                                       seasonalRange,
+                                   }: {
+    activeScopeLabel: string;
+    seasonalData: SeasonalApiResponse | null;
+    seasonalLoading: boolean;
+    seasonalError: string | null;
+    seasonalRange: SeasonalDateRange;
+}) {
+    const seasonal = seasonalData?.seasonal;
+    const totalUnitsSold = seasonal?.totalUnitsSold ?? 0;
+    const averageMonthlyItems =
+        seasonal && seasonal.historyMonthsAvailable > 0
+            ? Math.round(totalUnitsSold / seasonal.historyMonthsAvailable)
+            : 0;
+
+    return (
+        <>
+            <div className="grid gap-3 md:grid-cols-3">
+                <SummaryCard
+                    icon={<CalendarDays size={18} />}
+                    title="Seasonal Sales Period"
+                    value={formatOwnerSeasonalRange(seasonalRange)}
+                    detail={`Completed POS item quantities for ${activeScopeLabel}`}
+                    tone="purple"
+                />
+                <SummaryCard
+                    icon={<PackageSearch size={18} />}
+                    title="Average Monthly Items Sold"
+                    value={
+                        seasonalLoading && !seasonal
+                            ? "Loading..."
+                            : `${formatNumber(averageMonthlyItems)} items`
+                    }
+                    detail="Average item quantity across the selected sales period"
+                    tone="green"
+                />
+                <SummaryCard
+                    icon={<TrendingUp size={18} />}
+                    title="Recent Seasonal Trend"
+                    value={
+                        seasonalLoading && !seasonal
+                            ? "Loading..."
+                            : formatOwnerSeasonalTrend(seasonalData)
+                    }
+                    detail={`Peak months: ${formatOwnerPeakMonths(seasonalData)}`}
+                    tone={seasonalError && !seasonal ? "red" : "gold"}
+                />
+            </div>
+
+            <div className="rounded-xl border border-[#E6DDF0] bg-[#FBF8FF] px-4 py-3 text-xs leading-5 text-[#6B5B78]">
+                <span className="font-semibold text-[#2B174C]">
+                    Seasonal Patterns view:
+                </span>{" "}
+                this section explains monthly POS item quantities, peak months,
+                lower-demand months, and seasonal trend for the selected scope.
+                Product-level 30-day demand is shown in the Product Demand tab.
+                {seasonalError && (
+                    <span className="mt-1 block text-[#A56607]">
+                        Showing the most recently loaded seasonal values. {seasonalError}
+                    </span>
+                )}
+            </div>
+        </>
+    );
+}
+
+
 export default function OwnerForecast({
                                           data,
                                           loading,
@@ -198,11 +382,62 @@ export default function OwnerForecast({
     const [selectedBranchId, setSelectedBranchId] = useState<number | null>(
         null
     );
+    const [ownerSeasonalData, setOwnerSeasonalData] =
+        useState<SeasonalApiResponse | null>(null);
+    const [ownerSeasonalLoading, setOwnerSeasonalLoading] = useState(false);
+    const [ownerSeasonalError, setOwnerSeasonalError] = useState<string | null>(
+        null
+    );
 
     const branches = useMemo(
         () => (data ? buildBranchForecasts(data.items) : []),
         [data]
     );
+
+    useEffect(() => {
+        if (!selectedBranchId) {
+            setOwnerSeasonalData(null);
+            setOwnerSeasonalLoading(false);
+            setOwnerSeasonalError(null);
+            return;
+        }
+
+        let isCancelled = false;
+
+        const loadBranchSeasonalData = async () => {
+            setOwnerSeasonalLoading(true);
+            setOwnerSeasonalError(null);
+
+            try {
+                const scopedSeasonal = await requestOwnerScopedSeasonalForecast(
+                    selectedBranchId,
+                    seasonalRange
+                );
+
+                if (!isCancelled) {
+                    setOwnerSeasonalData(scopedSeasonal);
+                }
+            } catch (requestError) {
+                if (!isCancelled) {
+                    setOwnerSeasonalError(
+                        requestError instanceof Error
+                            ? requestError.message
+                            : "Unable to load branch seasonal data."
+                    );
+                }
+            } finally {
+                if (!isCancelled) {
+                    setOwnerSeasonalLoading(false);
+                }
+            }
+        };
+
+        void loadBranchSeasonalData();
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [selectedBranchId, seasonalRange.startMonth, seasonalRange.endMonth]);
 
     if (loading && !data) {
         return <ForecastLoadingState />;
@@ -229,13 +464,20 @@ export default function OwnerForecast({
         ? buildScopedBookingForecast(bookingData, selectedBranch.id)
         : bookingData;
 
-    const expectedBookings =
-        scopedBookingData?.booking?.expectedBookings ??
-        branchData.summary.expectedBookings;
+    const displayedSeasonalData = selectedBranch
+        ? ownerSeasonalData
+        : seasonalData;
+    const displayedSeasonalLoading = selectedBranch
+        ? ownerSeasonalLoading
+        : seasonalLoading;
+    const displayedSeasonalError = selectedBranch
+        ? ownerSeasonalError
+        : seasonalError;
 
-    const highDemandItems =
-        branchData.summary.highDemandItems ??
-        branchData.items.filter((item) => item.demandLevel === "HIGH").length;
+    const handleApplySeasonalRange = async (range: SeasonalDateRange) => {
+        await applySeasonalRange(range);
+    };
+
 
     const activeScopeLabel =
         selectedBranch?.name || "All Branches";
@@ -279,39 +521,19 @@ export default function OwnerForecast({
                 </div>
             </section>
 
-            <div className="grid gap-3 md:grid-cols-3">
-                <SummaryCard
-                    icon={<PackageSearch size={18} />}
-                    title={
-                        isAllBranches
-                            ? "30-Day Customer Demand"
-                            : "30-Day Branch Demand"
-                    }
-                    value={`${formatNumber(branchData.summary.projectedDemand)} units`}
-                    detail={`${activeScopeLabel} · projected from completed POS sales`}
-                    tone="purple"
+            {activeTab === "inventory" ? (
+                <ProductDemandSummaryCards data={branchData} />
+            ) : (
+                <OwnerSeasonalSummaryCards
+                    activeScopeLabel={activeScopeLabel}
+                    seasonalData={displayedSeasonalData}
+                    seasonalLoading={displayedSeasonalLoading}
+                    seasonalError={displayedSeasonalError}
+                    seasonalRange={seasonalRange}
                 />
-                <SummaryCard
-                    icon={<TrendingUp size={18} />}
-                    title="High-Demand Products"
-                    value={`${formatNumber(highDemandItems)} item${
-                        highDemandItems === 1 ? "" : "s"
-                    }`}
-                    detail="Demand level is ranked by projected demand, not stock quantity"
-                    tone="green"
-                />
-                <SummaryCard
-                    icon={<CalendarDays size={18} />}
-                    title="Upcoming Booking Demand"
-                    value={`${formatNumber(expectedBookings)} booking${
-                        expectedBookings === 1 ? "" : "s"
-                    }`}
-                    detail={`Confirmed or preparing · next ${branchData.scope.periodDays} days`}
-                    tone="gold"
-                />
-            </div>
+            )}
 
-            {isAllBranches ? (
+            {isAllBranches && activeTab === "inventory" ? (
                 <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
                     <section className="rounded-[14px] border border-[#E6DDF0] bg-white p-4 shadow-sm">
                         <div className="flex items-start justify-between gap-4">
@@ -461,11 +683,11 @@ export default function OwnerForecast({
 
             <ForecastDetails
                 data={branchData}
-                seasonalData={seasonalData}
-                seasonalLoading={seasonalLoading}
-                seasonalError={seasonalError}
+                seasonalData={displayedSeasonalData}
+                seasonalLoading={displayedSeasonalLoading}
+                seasonalError={displayedSeasonalError}
                 seasonalRange={seasonalRange}
-                applySeasonalRange={applySeasonalRange}
+                applySeasonalRange={handleApplySeasonalRange}
                 bookingData={scopedBookingData}
                 bookingLoading={bookingLoading}
                 bookingError={bookingError}
@@ -478,6 +700,7 @@ export default function OwnerForecast({
                 }
                 subtitle={`Scope: ${activeScopeLabel} · Product Demand uses ${branchData.scope.historyWeeks} weeks of completed POS sales.`}
                 canViewInventory
+                showProductSummaryCards={false}
             />
         </div>
     );

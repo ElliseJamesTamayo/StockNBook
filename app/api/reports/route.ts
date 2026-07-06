@@ -1,704 +1,509 @@
 import { NextRequest, NextResponse } from "next/server";
+import mysql, { type Connection } from "mysql2/promise";
+import jwt from "jsonwebtoken";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-/*
-  Development version: returns sample data for the Reports UI.
-  Before production, replace the sample-data builders with database queries and
-  obtain role, branch, and permissions from a verified server-side session.
-*/
+const FORECASTING_LAMBDA_URL =
+    process.env.FORECASTING_LAMBDA_URL ||
+    "https://7oxhafersb.execute-api.ap-southeast-1.amazonaws.com/stocknbook-forecasting";
 
-const ALL_BRANCHES = "All branches" as const;
-type UserRole = "owner" | "manager" | "staff";
-type BookingStatus =
-    | "pending"
-    | "confirmed"
-    | "preparing"
-    | "cancelled"
-    | "completed";
+type Role = "owner" | "manager" | "staff";
+type TokenPayload = jwt.JwtPayload & {
+    store_id?: number | string;
+    storeId?: number | string;
+    branch_id?: number | string;
+    branchId?: number | string;
+    role?: string;
+};
 
-type ResolvedDateRange = {
-    month: string;
+type DateRange = {
     startDate: string;
     endDate: string;
     label: string;
-    isCustomRange: boolean;
 };
 
-type Branch = {
-    id: string;
-    code: string;
-    name: string;
-    location: string;
-    manager: string;
-    contact: string;
-    multiplier: number;
-};
-
-type SaleRecord = {
-    id: string;
-    reference: string;
-    date: string;
-    branch: string;
-    customer: string;
-    type: string;
-    product: string;
-    category: string;
-    quantity: number;
-    amount: number;
-    status: "Completed";
-};
-
-type BookingRecord = {
-    id: string;
-    reference: string;
-    date: string;
-    eventDate: string;
-    branch: string;
-    customer: string;
-    packageName: string;
-    status: BookingStatus;
-    statusLabel: string;
-    amount: number;
-};
-
-type InventoryVariant = {
-    id: string;
-    sku?: string;
-    name: string;
-    stock: number;
-    reorderLevel: number;
-    costPrice?: number;
-    salesPrice?: number;
-    status: "In Stock" | "Low Stock" | "Out of Stock";
-};
-
-type InventoryItem = {
-    id: string;
-    sku: string;
-    product: string;
-    category: string;
-    branch: string;
-    stock: number;
-    reorderLevel: number;
-    costPrice?: number;
-    salesPrice?: number;
-    variants?: InventoryVariant[];
-    status: "In Stock" | "Low Stock" | "Out of Stock";
-};
-
-type RestockRecord = {
-    id: string;
-    date: string;
-    product: string;
-    variantName?: string;
-    branch: string;
-    quantityAdded: number;
-    stockBefore: number;
-    currentStock: number;
-    receivedBy: string;
-    reference: string;
-    notes?: string;
-};
-
-type SectionAccess = {
-    branchDetails: boolean;
-    inventory: boolean;
-    sales: boolean;
-    stockAlerts: boolean;
-    bookings: boolean;
-};
-
-const BRANCHES: Branch[] = [
-    {
-        id: "branch-makati",
-        code: "MKT",
-        name: "Makati Branch",
-        location: "Makati City",
-        manager: "Branch Manager",
-        contact: "0917-000-1001",
-        multiplier: 1,
-    },
-    {
-        id: "branch-pasay",
-        code: "PSY",
-        name: "Pasay Branch",
-        location: "Pasay City",
-        manager: "Branch Manager",
-        contact: "0917-000-1002",
-        multiplier: 1.35,
-    },
-    {
-        id: "branch-paranaque",
-        code: "PRQ",
-        name: "Parañaque Branch",
-        location: "Parañaque City",
-        manager: "Branch Manager",
-        contact: "0917-000-1003",
-        multiplier: 1.15,
-    },
-];
-
-function getCurrentMonth() {
-    return new Date().toISOString().slice(0, 7);
+function asPositiveInteger(value: unknown) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-function isValidMonth(value: string) {
-    return /^\d{4}-\d{2}$/.test(value);
+function asNumber(value: unknown) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function isValidDate(value: string | null): value is string {
-    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        return false;
+function asText(value: unknown) {
+    return String(value ?? "").trim();
+}
+
+function isDate(value: string) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function toIsoDate(value: Date) {
+    return value.toISOString().slice(0, 10);
+}
+
+function defaultRange(): DateRange {
+    const now = new Date();
+    const start = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
+    );
+
+    return {
+        startDate: toIsoDate(start),
+        endDate: toIsoDate(now),
+        label: new Intl.DateTimeFormat("en-PH", {
+            month: "long",
+            year: "numeric",
+            timeZone: "UTC",
+        }).format(start),
+    };
+}
+
+function resolveDateRange(searchParams: URLSearchParams): DateRange | null {
+    const fallback = defaultRange();
+    const startDate = asText(searchParams.get("startDate")) || fallback.startDate;
+    const endDate = asText(searchParams.get("endDate")) || fallback.endDate;
+
+    if (!isDate(startDate) || !isDate(endDate) || startDate > endDate) {
+        return null;
     }
 
-    return !Number.isNaN(new Date(`${value}T00:00:00.000Z`).getTime());
-}
+    const start = new Date(`${startDate}T00:00:00.000Z`).getTime();
+    const end = new Date(`${endDate}T00:00:00.000Z`).getTime();
+    const days = Math.floor((end - start) / 86_400_000) + 1;
 
-function toDateString(date: Date) {
-    return date.toISOString().slice(0, 10);
-}
+    if (days > 366) {
+        return null;
+    }
 
-function getMonthLabel(month: string) {
-    return new Intl.DateTimeFormat("en-PH", {
-        month: "long",
-        year: "numeric",
-    }).format(new Date(`${month}-01T00:00:00`));
-}
-
-function getMonthRange(month: string) {
-    const [yearText, monthText] = month.split("-");
-    const year = Number(yearText);
-    const monthIndex = Number(monthText) - 1;
-    const start = new Date(Date.UTC(year, monthIndex, 1));
-    const end = new Date(Date.UTC(year, monthIndex + 1, 0));
-
-    return { startDate: toDateString(start), endDate: toDateString(end) };
-}
-
-function formatDateRangeLabel(startDate: string, endDate: string) {
-    const formatter = new Intl.DateTimeFormat("en-PH", {
+    const label = new Intl.DateTimeFormat("en-PH", {
         month: "short",
         day: "numeric",
         year: "numeric",
+        timeZone: "UTC",
     });
 
-    const start = formatter.format(new Date(`${startDate}T00:00:00`));
-    const end = formatter.format(new Date(`${endDate}T00:00:00`));
-    return start === end ? start : `${start} – ${end}`;
+    return {
+        startDate,
+        endDate,
+        label:
+            startDate === endDate
+                ? label.format(new Date(`${startDate}T00:00:00.000Z`))
+                : `${label.format(new Date(`${startDate}T00:00:00.000Z`))} – ${label.format(
+                    new Date(`${endDate}T00:00:00.000Z`)
+                )}`,
+    };
 }
 
-function resolveDateRange(
-    searchParams: URLSearchParams
-): ResolvedDateRange {
-    const requestedMonth = searchParams.get("month") || getCurrentMonth();
-    const month = isValidMonth(requestedMonth)
-        ? requestedMonth
-        : getCurrentMonth();
+function databaseConfig() {
+    const required = ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"];
+    const missing = required.filter((key) => !asText(process.env[key]));
 
-    const startDate = searchParams.get("startDate");
-    const endDate = searchParams.get("endDate");
-
-    if (isValidDate(startDate) && isValidDate(endDate) && startDate <= endDate) {
-        return {
-            month,
-            startDate,
-            endDate,
-            label: formatDateRangeLabel(startDate, endDate),
-            isCustomRange: true,
-        };
+    if (missing.length > 0) {
+        throw new Error(
+            `Missing database environment variable(s): ${missing.join(", ")}.`
+        );
     }
 
-    const range = getMonthRange(month);
     return {
-        month,
-        ...range,
-        label: getMonthLabel(month),
-        isCustomRange: false,
+        host: process.env.DB_HOST,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_NAME,
+        port: Number(process.env.DB_PORT || 3306),
+        ssl:
+            String(process.env.DB_SSL || "").toLowerCase() === "true"
+                ? { rejectUnauthorized: false }
+                : undefined,
     };
 }
 
-function normalizeRole(value: string | null): UserRole {
-    const role = (value || "manager").trim().toLowerCase();
-    if (role === "owner") return "owner";
-    if (role === "staff") return "staff";
-    return "manager";
-}
-
-function normalizeBranchName(value: string | null) {
-    if (!value) return null;
-    const normalized = value.trim().toLowerCase();
-
-    if (normalized === ALL_BRANCHES.toLowerCase()) return ALL_BRANCHES;
-
-    return (
-        BRANCHES.find((branch) => branch.name.toLowerCase() === normalized)
-            ?.name ?? null
+function jsonError(message: string, status: number) {
+    return NextResponse.json(
+        {
+            success: false,
+            error: message,
+        },
+        { status }
     );
 }
 
-function parsePermissions(value: string | null) {
-    return new Set(
-        (value || "")
-            .split(",")
-            .map((item) => item.trim().toLowerCase())
-            .filter(Boolean)
-    );
-}
+function getToken(request: NextRequest): TokenPayload {
+    const authHeader = request.headers.get("Authorization") || "";
 
-function hasAnyPermission(permissions: Set<string>, aliases: string[]) {
-    return aliases.some((alias) => permissions.has(alias));
-}
-
-function getSectionAccess(
-    role: UserRole,
-    permissions: Set<string>,
-    hasExplicitPermissions: boolean
-): SectionAccess {
-    // Owner and manager have full access within their allowed branch scope.
-    // For staff without an explicit permissions string, keep access open during UI development.
-    if (role !== "staff" || !hasExplicitPermissions) {
-        return {
-            branchDetails: true,
-            inventory: true,
-            sales: true,
-            stockAlerts: true,
-            bookings: true,
-        };
+    if (!authHeader) {
+        throw new Error("Missing Authorization header.");
     }
 
-    const fullReports = hasAnyPermission(permissions, [
-        "reports",
-        "reports:view",
-        "reports:all",
-    ]);
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
 
-    const canUse = (aliases: string[]) =>
-        fullReports || hasAnyPermission(permissions, aliases);
+    if (!token) {
+        throw new Error("Missing authentication token.");
+    }
 
-    return {
-        branchDetails: canUse([
-            "reports:branches",
-            "reports:branch-details",
-            "branches",
-            "branches:view",
-        ]),
-        inventory: canUse([
-            "reports:inventory",
-            "inventory",
-            "inventory:view",
-        ]),
-        sales: canUse([
-            "reports:sales",
-            "sales",
-            "sales:view",
-            "pos",
-            "pos:view",
-        ]),
-        stockAlerts: canUse([
-            "reports:stock-alerts",
-            "reports:inventory",
-            "inventory",
-            "inventory:view",
-        ]),
-        bookings: canUse([
-            "reports:bookings",
-            "bookings",
-            "bookings:view",
-        ]),
-    };
-}
-
-function getRequestContext(request: NextRequest, searchParams: URLSearchParams) {
-    /*
-      Headers are ready for server middleware/session integration later.
-      Query parameters are only a temporary convenience for sample data.
-    */
-    const role = normalizeRole(
-        request.headers.get("x-user-role") || searchParams.get("role")
+    const decoded = jwt.verify(
+        token,
+        process.env.JWT_SECRET || "stocknbook-secret-key"
     );
 
-    const assignedBranch =
-        normalizeBranchName(
-            request.headers.get("x-assigned-branch") ||
-            searchParams.get("assignedBranch")
-        ) || BRANCHES[0].name;
+    if (!decoded || typeof decoded === "string") {
+        throw new Error("Invalid authentication token.");
+    }
 
-    const rawPermissions =
-        request.headers.get("x-user-permissions") ||
-        searchParams.get("permissions");
-
-    const requestedBranch =
-        normalizeBranchName(searchParams.get("branch")) ||
-        (role === "owner" ? ALL_BRANCHES : assignedBranch);
-
-    return {
-        role,
-        assignedBranch,
-        selectedBranch: role === "owner" ? requestedBranch : assignedBranch,
-        permissions: parsePermissions(rawPermissions),
-        hasExplicitPermissions: Boolean(rawPermissions?.trim()),
-    };
+    return decoded as TokenPayload;
 }
 
-function sampleDateAtPercent(startDate: string, endDate: string, percent: number) {
-    const start = new Date(`${startDate}T00:00:00.000Z`).getTime();
-    const end = new Date(`${endDate}T00:00:00.000Z`).getTime();
-    const day = 24 * 60 * 60 * 1000;
-    const totalDays = Math.max(0, Math.floor((end - start) / day));
-    const offset = Math.round((totalDays * percent) / 100);
+async function ensureBranchBelongsToStore(
+    connection: Connection,
+    branchId: number,
+    storeId: number
+) {
+    const [rows] = await connection.execute(
+        `SELECT id, branch_name
+         FROM branches
+         WHERE id = ? AND store_id = ?
+         LIMIT 1`,
+        [branchId, storeId]
+    );
 
-    return toDateString(new Date(start + offset * day));
+    return (rows as Array<{ id: number; branch_name: string }>)[0] || null;
 }
 
-function bookingStatusLabel(status: BookingStatus) {
-    return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-function inventoryStatus(stock: number, reorderLevel: number): InventoryItem["status"] {
+function getInventoryStatus(stock: number, alertLevel: number) {
     if (stock <= 0) return "Out of Stock";
-    if (stock <= reorderLevel) return "Low Stock";
+    if (stock <= alertLevel) return "Low Stock";
     return "In Stock";
 }
 
-function buildSampleSales(
-    branches: Branch[],
-    startDate: string,
-    endDate: string
-): SaleRecord[] {
-    const templates = [
-        { product: "Balloon Pump", category: "Accessories", quantity: 8, unitPrice: 80, position: 15 },
-        { product: "Party Hat", category: "Party Essentials", quantity: 5, unitPrice: 65, position: 38 },
-        { product: "Table Cover / Small", category: "Tableware", quantity: 2, unitPrice: 150, position: 58 },
-        { product: "Gold Balloon", category: "Balloons", quantity: 12, unitPrice: 25, position: 82 },
-    ];
+async function loadBranches(
+    connection: Connection,
+    storeId: number,
+    branchId: number | null
+) {
+    let query = `
+        SELECT id, branch_name, address, contact_number
+        FROM branches
+        WHERE store_id = ?
+    `;
+    const params: Array<number> = [storeId];
 
-    return branches.flatMap((branch) =>
-        templates.map((item, index) => {
-            const date = sampleDateAtPercent(startDate, endDate, item.position);
-            return {
-                id: `sale-${branch.code}-${index + 1}`,
-                reference: `POS-${branch.code}-${date.replaceAll("-", "")}-${String(index + 1).padStart(3, "0")}`,
-                date,
-                branch: branch.name,
-                customer: "Walk-in Customer",
-                type: "POS Sale",
-                product: item.product,
-                category: item.category,
-                quantity: item.quantity,
-                amount: Math.round(item.quantity * item.unitPrice * branch.multiplier),
-                status: "Completed" as const,
+    if (branchId) {
+        query += " AND id = ?";
+        params.push(branchId);
+    }
+
+    query += " ORDER BY branch_name ASC";
+
+    const [rows] = await connection.execute(query, params);
+
+    return (rows as Array<Record<string, unknown>>).map((row) => ({
+        id: Number(row.id),
+        name: asText(row.branch_name),
+        location: asText(row.address),
+        contact: asText(row.contact_number),
+    }));
+}
+
+async function loadInventory(
+    connection: Connection,
+    storeId: number,
+    branchId: number | null
+) {
+    let query = `
+        SELECT
+            p.id AS product_id,
+            p.branch_id,
+            p.name AS product_name,
+            p.category,
+            p.stock,
+            p.alert_level,
+            p.original_price,
+            p.sales_price,
+            p.has_variants,
+            br.branch_name,
+            pv.id AS variant_id,
+            pv.variant_values,
+            pv.stock AS variant_stock,
+            pv.alert_level AS variant_alert_level,
+            pv.original_price AS variant_original_price,
+            pv.sales_price AS variant_sales_price
+        FROM products p
+        LEFT JOIN branches br
+            ON br.id = p.branch_id AND br.store_id = p.store_id
+        LEFT JOIN product_variants pv
+            ON pv.product_id = p.id
+        WHERE p.store_id = ?
+    `;
+
+    const params: Array<number> = [storeId];
+
+    if (branchId) {
+        query += " AND p.branch_id = ?";
+        params.push(branchId);
+    }
+
+    query += " ORDER BY br.branch_name ASC, p.name ASC, pv.id ASC";
+
+    const [rows] = await connection.execute(query, params);
+    const grouped = new Map<string, Record<string, unknown>>();
+
+    for (const rawRow of rows as Array<Record<string, unknown>>) {
+        const id = String(rawRow.product_id);
+        const product =
+            grouped.get(id) ||
+            {
+                id,
+                product: asText(rawRow.product_name) || "Unnamed Product",
+                category: asText(rawRow.category) || "Uncategorized",
+                branch: asText(rawRow.branch_name) || "Unassigned Branch",
+                stock: asNumber(rawRow.stock),
+                reorderLevel: asNumber(rawRow.alert_level),
+                costPrice: asNumber(rawRow.original_price),
+                salesPrice: asNumber(rawRow.sales_price),
+                variants: [] as Array<Record<string, unknown>>,
             };
-        })
-    );
-}
 
-function buildSampleBookings(
-    branches: Branch[],
-    startDate: string,
-    endDate: string
-): BookingRecord[] {
-    const templates: Array<{
-        customer: string;
-        packageName: string;
-        status: BookingStatus;
-        amount: number;
-        position: number;
-        eventPosition: number;
-    }> = [
-        { customer: "Maria Santos", packageName: "Birthday Balloon Package", status: "pending", amount: 1200, position: 12, eventPosition: 30 },
-        { customer: "John Reyes", packageName: "Baby Shower Package", status: "confirmed", amount: 2500, position: 28, eventPosition: 50 },
-        { customer: "Anne Cruz", packageName: "Wedding Backdrop Package", status: "preparing", amount: 4200, position: 46, eventPosition: 72 },
-        { customer: "Paul Garcia", packageName: "Kids Party Package", status: "cancelled", amount: 1800, position: 64, eventPosition: 82 },
-        { customer: "Liza Flores", packageName: "Corporate Event Package", status: "completed", amount: 3500, position: 84, eventPosition: 90 },
-    ];
+        if (rawRow.variant_id) {
+            const values = (() => {
+                try {
+                    return JSON.parse(asText(rawRow.variant_values) || "{}") as Record<
+                        string,
+                        unknown
+                    >;
+                } catch {
+                    return {};
+                }
+            })();
 
-    return branches.flatMap((branch) =>
-        templates.map((item, index) => {
-            const date = sampleDateAtPercent(startDate, endDate, item.position);
-            return {
-                id: `booking-${branch.code}-${index + 1}`,
-                reference: `BKG-${branch.code}-${date.replaceAll("-", "")}-${String(index + 1).padStart(3, "0")}`,
-                date,
-                eventDate: sampleDateAtPercent(startDate, endDate, item.eventPosition),
-                branch: branch.name,
-                customer: item.customer,
-                packageName: item.packageName,
-                status: item.status,
-                statusLabel: bookingStatusLabel(item.status),
-                amount: Math.round(item.amount * branch.multiplier),
-            };
-        })
-    );
-}
+            const variantName =
+                Object.values(values)
+                    .map((value) => asText(value))
+                    .filter(Boolean)
+                    .join(" / ") || "Variant";
 
-function buildSampleInventory(branches: Branch[]): InventoryItem[] {
-    type VariantTemplate = {
-        sku: string;
-        name: string;
-        stock: number;
-        reorderLevel: number;
-        costPrice: number;
-        salesPrice: number;
-    };
+            const variantStock = asNumber(rawRow.variant_stock);
+            const variantAlert = asNumber(rawRow.variant_alert_level);
 
-    type InventoryTemplate = {
-        sku: string;
-        product: string;
-        category: string;
-        stock?: number;
-        reorderLevel: number;
-        costPrice?: number;
-        salesPrice?: number;
-        variants?: VariantTemplate[];
-    };
+            (product.variants as Array<Record<string, unknown>>).push({
+                id: String(rawRow.variant_id),
+                name: variantName,
+                stock: variantStock,
+                reorderLevel: variantAlert,
+                costPrice: asNumber(rawRow.variant_original_price),
+                salesPrice: asNumber(rawRow.variant_sales_price),
+                status: getInventoryStatus(variantStock, variantAlert),
+            });
+        }
 
-    const templates: InventoryTemplate[] = [
-        {
-            sku: "BAL-GLD",
-            product: "Gold Balloon",
-            category: "Balloons",
-            reorderLevel: 55,
-            variants: [
-                { sku: "GLD-SM-PC", name: "small, piece", stock: 50, reorderLevel: 20, costPrice: 10, salesPrice: 120 },
-                { sku: "GLD-LG-PC", name: "large, piece", stock: 23, reorderLevel: 15, costPrice: 15, salesPrice: 180 },
-                { sku: "GLD-SM-PK", name: "small, pack", stock: 14, reorderLevel: 10, costPrice: 20, salesPrice: 300 },
-                { sku: "GLD-LG-PK", name: "large, pack", stock: 15, reorderLevel: 10, costPrice: 25, salesPrice: 350 },
-            ],
-        },
-        {
-            sku: "BCK-TAE",
-            product: "Tae",
-            category: "Backdrops",
-            reorderLevel: 60,
-            costPrice: 1000,
-            variants: [
-                { sku: "TAE-SM", name: "small", stock: 45, reorderLevel: 30, costPrice: 1000, salesPrice: 200 },
-                { sku: "TAE-LG", name: "large", stock: 45, reorderLevel: 30, costPrice: 1000, salesPrice: 300 },
-            ],
-        },
-        {
-            sku: "LIN-TCV",
-            product: "Table Cover",
-            category: "Linens & Covers",
-            reorderLevel: 40,
-            variants: [
-                { sku: "TCV-SM", name: "small", stock: 94, reorderLevel: 20, costPrice: 200, salesPrice: 400 },
-                { sku: "TCV-LG", name: "large", stock: 99, reorderLevel: 20, costPrice: 300, salesPrice: 500 },
-            ],
-        },
-        {
-            sku: "DEC-BP",
-            product: "Balloon Pump",
-            category: "Decorations",
-            stock: 0,
-            reorderLevel: 5,
-            costPrice: 120,
-            salesPrice: 180,
-        },
-        {
-            sku: "CDS-CT",
-            product: "Cake Topper",
-            category: "Cake & Desserts",
-            stock: 30,
-            reorderLevel: 8,
-            costPrice: 25,
-            salesPrice: 40,
-        },
-        {
-            sku: "CSP-PH",
-            product: "Party Hat",
-            category: "Costumes & Props",
-            stock: 38,
-            reorderLevel: 10,
-            costPrice: 10,
-            salesPrice: 15,
-        },
-        {
-            sku: "BAL-BLK",
-            product: "Black Balloon",
-            category: "Balloons",
-            reorderLevel: 55,
-            variants: [
-                { sku: "BLK-SM-PC", name: "small, piece", stock: 50, reorderLevel: 20, costPrice: 10, salesPrice: 12 },
-                { sku: "BLK-LG-PC", name: "large, piece", stock: 25, reorderLevel: 15, costPrice: 15, salesPrice: 20 },
-                { sku: "BLK-SM-PK", name: "small, pack", stock: 18, reorderLevel: 10, costPrice: 20, salesPrice: 28 },
-                { sku: "BLK-LG-PK", name: "large, pack", stock: 17, reorderLevel: 10, costPrice: 25, salesPrice: 35 },
-            ],
-        },
-    ];
+        grouped.set(id, product);
+    }
 
-    return branches.flatMap((branch) =>
-        templates.map((item, itemIndex) => {
-            const variants = (item.variants || []).map((variant) => ({
-                id: `variant-${branch.code}-${itemIndex + 1}-${variant.sku}`,
-                sku: `${variant.sku}-${branch.code}`,
-                name: variant.name,
-                stock: variant.stock,
-                reorderLevel: variant.reorderLevel,
-                costPrice: variant.costPrice,
-                salesPrice: variant.salesPrice,
-                status: inventoryStatus(variant.stock, variant.reorderLevel),
-            }));
+    return Array.from(grouped.values()).map((product) => {
+        const variants = product.variants as Array<Record<string, unknown>>;
+        const hasVariants = variants.length > 0;
 
-            const stock =
-                variants.length > 0
-                    ? variants.reduce((total, variant) => total + variant.stock, 0)
-                    : Math.max(0, item.stock || 0);
+        const stock = hasVariants
+            ? variants.reduce((sum, variant) => sum + asNumber(variant.stock), 0)
+            : asNumber(product.stock);
 
-            return {
-                id: `inventory-${branch.code}-${itemIndex + 1}`,
-                sku: `${item.sku}-${branch.code}`,
-                product: item.product,
-                category: item.category,
-                branch: branch.name,
-                stock,
-                reorderLevel: item.reorderLevel,
-                costPrice: item.costPrice,
-                salesPrice: item.salesPrice,
-                variants: variants.length > 0 ? variants : undefined,
-                status: inventoryStatus(stock, item.reorderLevel),
-            };
-        })
-    );
-}
+        const reorderLevel = hasVariants
+            ? variants.reduce(
+                (sum, variant) => sum + asNumber(variant.reorderLevel),
+                0
+            )
+            : asNumber(product.reorderLevel);
 
-function buildSampleRestockHistory(
-    branches: Branch[],
-    startDate: string,
-    endDate: string
-): RestockRecord[] {
-    const templates = [
-        {
-            product: "Gold Balloon",
-            variantName: "small, piece",
-            quantityAdded: 30,
-            stockBefore: 20,
-            currentStock: 50,
-            receivedBy: "Shiela Maningo",
-            position: 78,
-            notes: "Restocked to meet the reorder level for the small-piece variant.",
-        },
-        {
-            product: "LED Lights",
-            quantityAdded: 30,
-            stockBefore: 55,
-            currentStock: 85,
-            receivedBy: "Ash",
-            position: 58,
-            notes: "Restocked after a low-stock alert.",
-        },
-        {
-            product: "Party Hats",
-            quantityAdded: 50,
-            stockBefore: 90,
-            currentStock: 140,
-            receivedBy: "Ellise Tamayo",
-            position: 36,
-            notes: "Added stock for upcoming birthday package reservations.",
-        },
-        {
-            product: "Table Covers",
-            quantityAdded: 20,
-            stockBefore: 40,
-            currentStock: 60,
-            receivedBy: "Mark Santos",
-            position: 18,
-            notes: "Regular branch replenishment.",
-        },
-    ];
-
-    return branches.flatMap((branch) =>
-        templates.map((item, index) => {
-            const date = sampleDateAtPercent(startDate, endDate, item.position);
-
-            return {
-                id: `restock-${branch.code}-${index + 1}`,
-                date,
-                product: item.product,
-                variantName: item.variantName,
-                branch: branch.name,
-                quantityAdded: item.quantityAdded,
-                stockBefore: item.stockBefore,
-                currentStock: item.currentStock,
-                receivedBy: item.receivedBy,
-                reference: `RST-${branch.code}-${date.replaceAll("-", "")}-${String(index + 1).padStart(3, "0")}`,
-                notes: item.notes,
-            };
-        })
-    );
-}
-
-function sumAmounts(items: Array<{ amount: number }>) {
-    return items.reduce((total, item) => total + item.amount, 0);
-}
-
-function sortByDateDescending<T extends { date: string }>(items: T[]) {
-    return [...items].sort((a, b) => b.date.localeCompare(a.date));
-}
-
-function buildWeeklyTrend(sales: SaleRecord[]) {
-    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    const values: Record<string, number> = {
-        Mon: 0,
-        Tue: 0,
-        Wed: 0,
-        Thu: 0,
-        Fri: 0,
-        Sat: 0,
-        Sun: 0,
-    };
-
-    for (const sale of sales) {
-        const day = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(
-            new Date(`${sale.date}T00:00:00`)
+        const hasOut = variants.some(
+            (variant) => asText(variant.status) === "Out of Stock"
         );
-        if (day in values) values[day] += sale.amount;
-    }
+        const hasLow = variants.some(
+            (variant) => asText(variant.status) === "Low Stock"
+        );
 
-    return days.map((day) => ({ day, value: values[day] }));
-}
-
-function buildTopProducts(sales: SaleRecord[]) {
-    const products = new Map<string, { product: string; category: string; sold: number; revenue: number }>();
-
-    for (const sale of sales) {
-        const current = products.get(sale.product) || {
-            product: sale.product,
-            category: sale.category,
-            sold: 0,
-            revenue: 0,
+        return {
+            ...product,
+            stock,
+            reorderLevel,
+            status: hasVariants
+                ? hasOut
+                    ? "Out of Stock"
+                    : hasLow
+                        ? "Low Stock"
+                        : "In Stock"
+                : getInventoryStatus(stock, reorderLevel),
+            variants: hasVariants ? variants : undefined,
         };
-        current.sold += sale.quantity;
-        current.revenue += sale.amount;
-        products.set(sale.product, current);
-    }
-
-    return Array.from(products.values())
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 5);
+    });
 }
 
-function buildCategorySales(sales: SaleRecord[]) {
-    const totalSales = sumAmounts(sales);
-    const categories = new Map<string, number>();
+async function loadSales(
+    connection: Connection,
+    storeId: number,
+    branchId: number | null,
+    range: DateRange
+) {
+    let query = `
+        SELECT
+            o.order_id,
+            o.branch_id,
+            br.branch_name,
+            o.customer_name,
+            DATE_FORMAT(o.order_date, '%Y-%m-%d') AS order_date,
+            COALESCE(o.total, 0) AS total,
+            COALESCE(SUM(oi.quantity), 0) AS total_quantity,
+            GROUP_CONCAT(
+                CONCAT(
+                    COALESCE(oi.product_name, 'Product'),
+                    ' × ',
+                    COALESCE(oi.quantity, 0)
+                )
+                ORDER BY oi.id SEPARATOR ', '
+            ) AS items_text
+        FROM orders o
+        LEFT JOIN branches br
+            ON br.id = o.branch_id AND br.store_id = o.store_id
+        LEFT JOIN order_items oi
+            ON oi.order_id = o.order_id
+        WHERE o.store_id = ?
+          AND o.order_date BETWEEN ? AND ?
+    `;
 
-    for (const sale of sales) {
-        categories.set(sale.category, (categories.get(sale.category) || 0) + sale.amount);
+    const params: Array<number | string> = [
+        storeId,
+        range.startDate,
+        range.endDate,
+    ];
+
+    if (branchId) {
+        query += " AND o.branch_id = ?";
+        params.push(branchId);
     }
 
-    return Array.from(categories.entries())
-        .map(([category, amount]) => ({
-            category,
+    query += `
+        GROUP BY
+            o.order_id,
+            o.branch_id,
+            br.branch_name,
+            o.customer_name,
+            o.order_date,
+            o.total
+        ORDER BY o.order_date DESC, o.order_id DESC
+    `;
+
+    const [rows] = await connection.execute(query, params);
+
+    return (rows as Array<Record<string, unknown>>).map((row) => ({
+        id: asText(row.order_id),
+        reference: asText(row.order_id),
+        date: asText(row.order_date),
+        branch: asText(row.branch_name) || "Unassigned Branch",
+        branchId: String(row.branch_id ?? ""),
+        customer: asText(row.customer_name) || "Walk-in Customer",
+        product: asText(row.items_text) || "No items recorded",
+        itemsText: asText(row.items_text) || "No items recorded",
+        category: "",
+        quantity: asNumber(row.total_quantity),
+        amount: asNumber(row.total),
+        revenueSource: "pos",
+        statusLabel: "Completed",
+    }));
+}
+
+function acceptedBookingStatus(status: string) {
+    return ["confirmed", "preparing", "completed"].includes(
+        status.trim().toLowerCase()
+    );
+}
+
+async function loadBookings(
+    connection: Connection,
+    storeId: number,
+    branchId: number | null,
+    range: DateRange
+) {
+    let query = `
+        SELECT
+            b.id,
+            b.branch_id,
+            br.branch_name,
+            b.booking_reference,
+            b.name,
+            b.phone,
+            b.event_date,
+            b.event_time,
+            b.event_type,
+            b.package_name,
+            b.custom_order,
+            b.venue,
+            b.notes,
+            b.status,
+            b.agreed_price,
+            b.package_price,
+            b.payment_status,
+            b.required_down_payment,
+            b.amount_paid,
+            b.balance
+        FROM bookings b
+        LEFT JOIN branches br
+            ON br.id = b.branch_id AND br.store_id = b.store_id
+        WHERE b.store_id = ?
+          AND b.event_date BETWEEN ? AND ?
+    `;
+
+    const params: Array<number | string> = [
+        storeId,
+        range.startDate,
+        range.endDate,
+    ];
+
+    if (branchId) {
+        query += " AND b.branch_id = ?";
+        params.push(branchId);
+    }
+
+    query += " ORDER BY b.event_date DESC, b.id DESC";
+
+    const [rows] = await connection.execute(query, params);
+
+    return (rows as Array<Record<string, unknown>>).map((row) => {
+        const agreedPrice = asNumber(row.agreed_price);
+        const packagePrice = asNumber(row.package_price);
+        const amount = agreedPrice > 0 ? agreedPrice : packagePrice;
+
+        return {
+            id: String(row.id),
+            reference: asText(row.booking_reference) || `BOOKING-${row.id}`,
+            date: asText(row.event_date),
+            eventDate: asText(row.event_date),
+            scheduleTime: asText(row.event_time) || undefined,
+            branch: asText(row.branch_name) || "Unassigned Branch",
+            branchId: String(row.branch_id ?? ""),
+            customer: asText(row.name) || "Customer",
+            phone: asText(row.phone) || undefined,
+            venue: asText(row.venue) || undefined,
+            packageName:
+                asText(row.package_name) ||
+                asText(row.custom_order) ||
+                "Custom / Unspecified",
+            status: asText(row.status).toLowerCase() || "pending",
+            statusLabel: asText(row.status) || "Pending",
             amount,
-            percentage: totalSales > 0 ? Number(((amount / totalSales) * 100).toFixed(1)) : 0,
-        }))
-        .sort((a, b) => b.amount - a.amount);
+            amountPaid: asNumber(row.amount_paid),
+            requiredDownPayment: asNumber(row.required_down_payment),
+            balance: asNumber(row.balance),
+            paymentStatus: asText(row.payment_status) || "unpaid",
+            notes: asText(row.notes) || undefined,
+        };
+    });
 }
 
-function buildBookingSummary(bookings: BookingRecord[]) {
-    const count: Record<BookingStatus, number> = {
+function bookingSummary(bookings: Array<Record<string, unknown>>) {
+    const count = {
         pending: 0,
         confirmed: 0,
         preparing: 0,
@@ -706,192 +511,234 @@ function buildBookingSummary(bookings: BookingRecord[]) {
         completed: 0,
     };
 
-    for (const booking of bookings) count[booking.status] += 1;
+    for (const booking of bookings) {
+        const status = asText(booking.status).toLowerCase() as keyof typeof count;
+        if (status in count) {
+            count[status] += 1;
+        }
+    }
 
     return {
         totalBookings: bookings.length,
-        pending: count.pending,
-        confirmed: count.confirmed,
-        preparing: count.preparing,
-        cancelled: count.cancelled,
-        completed: count.completed,
+        ...count,
     };
 }
 
-function buildBranchSummaries(
-    branches: Branch[],
-    inventory: InventoryItem[],
-    sales: SaleRecord[],
-    bookings: BookingRecord[]
-) {
-    return branches.map((branch) => {
-        const branchInventory = inventory.filter((item) => item.branch === branch.name);
-        const branchSales = sales.filter((item) => item.branch === branch.name);
-        const branchBookings = bookings.filter((item) => item.branch === branch.name);
+function bookingRevenue(bookings: Array<Record<string, unknown>>) {
+    return bookings
+        .filter((booking) => acceptedBookingStatus(asText(booking.status)))
+        .reduce((sum, booking) => sum + asNumber(booking.amount), 0);
+}
 
-        return {
-            id: branch.id,
-            name: branch.name,
-            location: branch.location,
-            manager: branch.manager,
-            contact: branch.contact,
-            grossSales: sumAmounts(branchSales),
-            bookingRevenue: sumAmounts(branchBookings.filter((item) => item.status !== "cancelled")),
-            transactionCount: branchSales.length,
-            inventoryItemCount: branchInventory.length,
-            lowStockCount: branchInventory.filter((item) => item.status === "Low Stock").length,
-            outOfStockCount: branchInventory.filter((item) => item.status === "Out of Stock").length,
-            bookingSummary: buildBookingSummary(branchBookings),
-        };
-    });
+async function loadForecastReport(
+    authHeader: string,
+    branchId: number | null
+) {
+    try {
+        const response = await fetch(FORECASTING_LAMBDA_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: authHeader,
+            },
+            body: JSON.stringify({
+                action: "get_inventory_forecast",
+                ...(branchId ? { branch_id: branchId } : {}),
+            }),
+            cache: "no-store",
+        });
+
+        if (!response.ok) {
+            return { forecasting: [], seasonalInsights: [] };
+        }
+
+        const payload = (await response.json()) as Record<string, unknown>;
+        const items = Array.isArray(payload.items) ? payload.items : [];
+
+        const forecasting = items.slice(0, 40).map((value, index) => {
+            const item = value as Record<string, unknown>;
+            const timeAlert = asText(item.timeAlert);
+            const status = asText(item.status);
+            const riskLevel =
+                timeAlert.includes("STOCKOUT") || timeAlert.includes("REORDER")
+                    ? "High"
+                    : status === "LOW" || status === "RISK"
+                        ? "Medium"
+                        : "Low";
+
+            return {
+                id: asText(item.id) || `forecast-${index + 1}`,
+                item: asText(item.itemName) || "Unnamed Item",
+                type: "Product",
+                currentValue: `${asNumber(item.onHandQuantity)} units`,
+                forecastedDemand: `${asNumber(item.forecastedDemand)} units / 30 days`,
+                suggestedRestock: `${asNumber(item.suggestedRestock)} units`,
+                riskLevel,
+            };
+        });
+
+        const seasonalInsights = items
+            .map((value) => value as Record<string, unknown>)
+            .filter((item) => {
+                const seasonality = item.seasonality as Record<string, unknown> | undefined;
+                const status = asText(seasonality?.status);
+                return status && status !== "NO_HISTORY" && status !== "LIMITED_HISTORY";
+            })
+            .slice(0, 12)
+            .map((item) => {
+                const seasonality = item.seasonality as Record<string, unknown> | undefined;
+                return {
+                    period: asText(item.itemName) || "Product",
+                    trend: asText(seasonality?.status) || "Seasonal signal",
+                    recommendation:
+                        asText(seasonality?.recommendation) ||
+                        `Review stock for ${asText(item.itemName) || "this product"} based on its POS sales pattern.`,
+                };
+            });
+
+        return { forecasting, seasonalInsights };
+    } catch {
+        // Keep the Reports route usable even when the Forecasting Lambda is unavailable.
+        return { forecasting: [], seasonalInsights: [] };
+    }
 }
 
 export async function GET(request: NextRequest) {
+    let connection: Connection | null = null;
+
     try {
-        const { searchParams } = new URL(request.url);
-        const { month, startDate, endDate, label, isCustomRange } = resolveDateRange(searchParams);
+        const range = resolveDateRange(new URL(request.url).searchParams);
 
-        const {
-            role,
-            assignedBranch,
-            selectedBranch,
-            permissions,
-            hasExplicitPermissions,
-        } = getRequestContext(request, searchParams);
+        if (!range) {
+            return jsonError(
+                "Choose a valid reporting range of up to 366 days.",
+                400
+            );
+        }
 
-        const access = getSectionAccess(role, permissions, hasExplicitPermissions);
+        const authHeader = request.headers.get("Authorization") || "";
+        const token = getToken(request);
+        const storeId = asPositiveInteger(token.store_id ?? token.storeId);
+        const role = asText(token.role).toLowerCase() as Role;
+        const tokenBranchId = asPositiveInteger(token.branch_id ?? token.branchId);
 
-        const scopedBranches =
-            selectedBranch === ALL_BRANCHES
-                ? BRANCHES
-                : BRANCHES.filter((branch) => branch.name === selectedBranch);
+        if (!storeId || !["owner", "manager", "staff"].includes(role)) {
+            return jsonError("Invalid store or role in authentication token.", 401);
+        }
 
-        const allSales = buildSampleSales(scopedBranches, startDate, endDate);
-        const allBookings = buildSampleBookings(scopedBranches, startDate, endDate);
-        const allInventory = buildSampleInventory(scopedBranches);
-        const allRestocks = buildSampleRestockHistory(
-            scopedBranches,
-            startDate,
-            endDate
+        const searchParams = new URL(request.url).searchParams;
+        const requestedBranchId = asPositiveInteger(
+            searchParams.get("branch_id") || searchParams.get("branchId")
         );
 
-        const visibleSales = access.sales ? sortByDateDescending(allSales) : [];
-        const visibleBookings = access.bookings ? sortByDateDescending(allBookings) : [];
-        const visibleInventory = access.inventory ? allInventory : [];
-        const visibleRestocks = access.inventory
-            ? sortByDateDescending(allRestocks)
-            : [];
+        connection = await mysql.createConnection(databaseConfig());
 
-        const lowStockItems = access.stockAlerts
-            ? allInventory.filter((item) => item.status === "Low Stock")
-            : [];
+        let branchId: number | null = null;
 
-        const outOfStockItems = access.stockAlerts
-            ? allInventory.filter((item) => item.status === "Out of Stock")
-            : [];
+        if (role === "manager" || role === "staff") {
+            if (!tokenBranchId) {
+                return jsonError("Your account has no assigned branch.", 400);
+            }
 
-        const bookingSummary = access.bookings
-            ? buildBookingSummary(visibleBookings)
-            : {
-                totalBookings: 0,
-                pending: 0,
-                confirmed: 0,
-                preparing: 0,
-                cancelled: 0,
-                completed: 0,
-            };
+            branchId = tokenBranchId;
+        } else if (requestedBranchId) {
+            const branch = await ensureBranchBelongsToStore(
+                connection,
+                requestedBranchId,
+                storeId
+            );
 
-        const grossSales = access.sales ? sumAmounts(visibleSales) : 0;
-        const bookingRevenue = access.bookings
-            ? sumAmounts(visibleBookings.filter((item) => item.status !== "cancelled"))
-            : 0;
+            if (!branch) {
+                return jsonError("Invalid branch for this store.", 400);
+            }
 
-        const branchSummaries = buildBranchSummaries(
-            scopedBranches,
-            allInventory,
-            allSales,
-            allBookings
+            branchId = requestedBranchId;
+        }
+
+        const [branches, inventoryList, salesList, bookingList, forecastReport] =
+            await Promise.all([
+                loadBranches(connection, storeId, branchId),
+                loadInventory(connection, storeId, branchId),
+                loadSales(connection, storeId, branchId, range),
+                loadBookings(connection, storeId, branchId, range),
+                loadForecastReport(authHeader, branchId),
+            ]);
+
+        const totalSales = salesList.reduce(
+            (sum, sale) => sum + asNumber(sale.amount),
+            0
         );
 
-        const branchDetails =
-            selectedBranch === ALL_BRANCHES
-                ? null
-                : branchSummaries.find((branch) => branch.name === selectedBranch) || null;
+        const branchName =
+            branchId && branches.length === 1
+                ? asText(branches[0].name)
+                : "All Branches";
+
+        const lowStockItems = inventoryList.filter(
+            (item) => asText(item.status) === "Low Stock"
+        );
+
+        const outOfStockItems = inventoryList.filter(
+            (item) => asText(item.status) === "Out of Stock"
+        );
 
         return NextResponse.json({
             success: true,
             data: {
-                // Existing fields: your present reports/page.tsx can continue using these.
-                branch: selectedBranch,
-                month,
-                monthLabel: label,
-                isSampleData: true,
-
-                summary: {
-                    grossSales,
-                    bookingRevenue,
-                    totalTransactions: visibleSales.length,
-                    averageOrderValue:
-                        visibleSales.length > 0 ? Math.round(grossSales / visibleSales.length) : 0,
-                },
-
-                bookingSummary,
-                weeklyTrend: access.sales ? buildWeeklyTrend(visibleSales) : [],
-                topProducts: access.sales ? buildTopProducts(visibleSales) : [],
-                categorySales: access.sales ? buildCategorySales(visibleSales) : [],
-                inventoryAlerts: access.stockAlerts
-                    ? [...outOfStockItems, ...lowStockItems]
-                    : [],
-                recentTransactions: visibleSales.slice(0, 10),
-
-                // New fields for owner, manager, and staff report views.
+                branch: branchName,
+                storeName: "StockNBook",
+                monthLabel: range.label,
+                isSampleData: false,
                 dateRange: {
-                    startDate,
-                    endDate,
-                    isCustomRange,
+                    startDate: range.startDate,
+                    endDate: range.endDate,
                 },
-
                 access: {
                     role,
-                    assignedBranch,
-                    selectedBranch,
+                    assignedBranch: branchName,
                     branchLocked: role !== "owner",
-                    canSelectAllBranches: role === "owner",
-                    sections: access,
                 },
-
-                branchOptions:
-                    role === "owner"
-                        ? [ALL_BRANCHES, ...BRANCHES.map((branch) => branch.name)]
-                        : [assignedBranch],
-
-                // Owner: all selected branches. Manager: assigned branch only.
-                // Staff: returned only when the branch-details permission is granted.
-                branches: access.branchDetails ? branchSummaries : [],
-                branchDetails: access.branchDetails ? branchDetails : null,
-
-                // Inventory list and stock lists for the allowed branch scope.
-                inventoryList: visibleInventory,
+                branchOptions: branches.map((branch) => asText(branch.name)),
+                summary: {
+                    grossSales: totalSales,
+                    bookingRevenue: bookingRevenue(bookingList),
+                    totalTransactions: salesList.length,
+                    averageOrderValue:
+                        salesList.length > 0
+                            ? Math.round(totalSales / salesList.length)
+                            : 0,
+                },
+                bookingSummary: bookingSummary(bookingList),
+                inventoryList,
                 lowStockItems,
                 outOfStockItems,
-                restockHistory: visibleRestocks,
-
-                // Sales list for the allowed branch scope.
-                salesList: visibleSales,
-
-                // Booking list includes pending, confirmed, preparing, cancelled, and completed.
-                bookingList: visibleBookings,
+                // StockNBook has no persisted restock/audit table in the current schema.
+                // Empty arrays are intentional: the UI must not show invented records.
+                restockHistory: [],
+                salesList,
+                bookingList,
+                forecasting: forecastReport.forecasting,
+                seasonalInsights: forecastReport.seasonalInsights,
+                staffActivities: [],
             },
         });
     } catch (error) {
-        console.error("Reports API error:", error);
+        const message =
+            error instanceof Error ? error.message : "Unable to load reports.";
 
-        return NextResponse.json(
-            {
-                success: false,
-                message: "Unable to generate the reports.",
-            },
-            { status: 500 }
-        );
+        if (
+            message.includes("Authorization") ||
+            message.includes("authentication") ||
+            message.includes("token")
+        ) {
+            return jsonError(message, 401);
+        }
+
+        console.error("Reports API error:", error);
+        return jsonError(message, 500);
+    } finally {
+        if (connection) {
+            await connection.end();
+        }
     }
 }

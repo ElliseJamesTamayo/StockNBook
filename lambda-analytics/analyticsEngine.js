@@ -277,7 +277,7 @@ function buildRange(input = {}, now = new Date()) {
         endDate,
         previousStartDate: toISODate(previousStart),
         previousEndDate: toISODate(previousEnd),
-        label: `Last ${days} days`,
+        label: `Rolling last ${days} days`,
     };
 }
 
@@ -370,36 +370,32 @@ function buildSalesData({
             }));
     }
 
-    const allMonthMap = new Map();
+    /*
+      Sales Growth uses only the selected reporting period for its month-by-month
+      bars. monthlySales is created from createMonthKeys(startDate, endDate), so
+      it already contains every calendar month touched by the selected range.
+      A month with no completed POS order stays in the chart with a value of 0.
 
-    for (const row of allRows) {
-        const date = toDateOnly(row.orderDate ?? row.order_date ?? row.date);
+      This prevents missing months from being skipped (for example, comparing
+      March directly with January when February had no sales). The first month
+      has no earlier month inside this chart, so it is marked as unavailable
+      instead of being presented as a misleading 0% comparison.
+    */
+    const growthMonths = monthlySales.map((month, index) => {
+        const currentValue = Number(month.value || 0);
+        const previousValue =
+            index > 0 ? Number(monthlySales[index - 1].value || 0) : null;
 
-        if (!date) {
-            continue;
-        }
-
-        const monthKey = monthKeyFromDate(date);
-        allMonthMap.set(
-            monthKey,
-            (allMonthMap.get(monthKey) || 0) +
-            toNumber(row.total ?? row.value ?? row.amount)
-        );
-    }
-
-    const growthMonths = Array.from(allMonthMap.keys())
-        .sort()
-        .slice(-8)
-        .map((monthKey, index, keys) => {
-            const value = allMonthMap.get(monthKey) || 0;
-            const previousValue =
-                index > 0 ? allMonthMap.get(keys[index - 1]) || 0 : 0;
-
-            return {
-                label: formatMonthLabel(monthKey).split(" ")[0],
-                value: index === 0 ? 0 : Math.round(percentChange(value, previousValue)),
-            };
-        });
+        return {
+            label: month.label,
+            key: month.key,
+            value:
+                previousValue === null
+                    ? 0
+                    : Math.round(percentChange(currentValue, previousValue)),
+            hasComparison: previousValue !== null,
+        };
+    });
 
     const latestMonthlySales =
         monthlySales.length > 0
@@ -424,7 +420,7 @@ function buildSalesData({
     };
 }
 
-function buildBookingData(bookings = []) {
+function buildBookingData(bookings = [], range = null) {
     const acceptedStatuses = new Set(["confirmed", "preparing", "completed"]);
     const acceptedBookings = (Array.isArray(bookings) ? bookings : []).filter((booking) =>
         acceptedStatuses.has(normalizeStatus(booking.status))
@@ -434,6 +430,17 @@ function buildBookingData(bookings = []) {
     const countByDay = new Map(days.map((day) => [day, 0]));
     const countByTime = new Map();
     const weekdayCounts = new Map();
+
+    /*
+      Monthly booking points follow the exact selected period. This is separate
+      from the weekday pattern: a 12-month period must produce 12 month buckets,
+      including a 0 for any month without an accepted booking.
+    */
+    const monthlyBookingMap = new Map(
+        range?.startDate && range?.endDate
+            ? createMonthKeys(range.startDate, range.endDate).map((monthKey) => [monthKey, 0])
+            : []
+    );
 
     let confirmed = 0;
     let preparing = 0;
@@ -449,6 +456,14 @@ function buildBookingData(bookings = []) {
 
         const date = toDateOnly(booking.eventDate ?? booking.event_date ?? booking.date);
         const day = weekdayKey(date);
+        const monthKey = monthKeyFromDate(date);
+
+        if (monthKey) {
+            monthlyBookingMap.set(
+                monthKey,
+                (monthlyBookingMap.get(monthKey) || 0) + 1
+            );
+        }
 
         if (day && countByDay.has(day)) {
             countByDay.set(day, (countByDay.get(day) || 0) + 1);
@@ -471,6 +486,23 @@ function buildBookingData(bookings = []) {
         label: day,
         value: countByDay.get(day) || 0,
     }));
+
+    const monthlyBookings = Array.from(monthlyBookingMap.entries()).map(
+        ([monthKey, value]) => ({
+            label: formatMonthLabel(monthKey),
+            key: monthKey,
+            value: Math.round(value || 0),
+        })
+    );
+
+    const sortedMonths = [...monthlyBookings].sort(
+        (first, second) =>
+            second.value - first.value ||
+            String(first.key || first.label).localeCompare(String(second.key || second.label))
+    );
+    const peakMonth = sortedMonths[0]?.value
+        ? sortedMonths[0].label
+        : "No booking data";
 
     const sortedDays = [...dailyBookings].sort(
         (first, second) => second.value - first.value || first.label.localeCompare(second.label)
@@ -512,6 +544,7 @@ function buildBookingData(bookings = []) {
             acceptedBookings.length > 0
                 ? Math.round((weekendCount / acceptedBookings.length) * 100)
                 : 0,
+        peakMonth,
         peakDay,
         peakTime,
         weekdayPeak,
@@ -519,6 +552,7 @@ function buildBookingData(bookings = []) {
             weekdayPeak === "No weekday booking data"
                 ? "No weekday booking data"
                 : `${weekdayPeak} has the highest accepted booking count.`,
+        monthlyBookings,
         dailyBookings,
         topPackages,
         acceptedBookings,
@@ -572,7 +606,7 @@ function buildInsights({ sales, bookings, productRevenue, packageRevenue, period
 
     if (bookings.totalBookings > 0) {
         insight.push(
-            `${bookings.peakDay} has the highest number of accepted bookings in the selected reporting period.`
+            `${bookings.peakMonth} recorded the highest number of accepted bookings in the selected reporting period. ${bookings.peakDay} is the most frequently scheduled booking weekday across that period.`
         );
     }
 
@@ -602,7 +636,7 @@ function buildAnalyticsPayload({
         salesRows,
         range,
     });
-    const bookings = buildBookingData(bookingRows);
+    const bookings = buildBookingData(bookingRows, range);
     const productRevenue = normalizeRevenueItems(productRevenueRows);
     const packageRevenue = buildPackageRevenue(bookingRows);
 
@@ -622,7 +656,10 @@ function buildAnalyticsPayload({
             value: sales.salesGrowthPercent,
             currentSales: sales.currentSales,
             previousSales: sales.previousSales,
-            comparisonLabel: `Compared with the previous ${range.days}-day period`,
+            comparisonLabel: `Overall selected-period sales compared with the previous ${range.days}-day period.`,
+            monthlyGrowthLabel: "Selected reporting period only",
+            monthlyGrowthDescription:
+                "Each bar compares a calendar month with the preceding month shown in this chart. Every calendar month in the selected reporting period is included; months without completed POS sales appear as ₱0.",
             monthlyGrowth: sales.monthlyGrowth,
         },
         salesTrend: {
@@ -637,11 +674,13 @@ function buildAnalyticsPayload({
             confirmed: bookings.confirmed,
             preparing: bookings.preparing,
             completed: bookings.completed,
+            peakMonth: bookings.peakMonth,
             peakDay: bookings.peakDay,
             peakTime: bookings.peakTime,
             weekendPercentage: bookings.weekendPercentage,
             weekdayPeak: bookings.weekdayPeak,
             weekdayPeakTime: bookings.weekdayPeakTime,
+            monthlyBookings: bookings.monthlyBookings,
             dailyBookings: bookings.dailyBookings,
             topPackages: bookings.topPackages,
         },
@@ -656,7 +695,7 @@ function buildAnalyticsPayload({
         }),
         dataNotes: {
             sales: "POS sales use recorded orders within the selected reporting period.",
-            bookings: "Booking analytics use accepted bookings with Confirmed, Preparing, or Completed status and event dates within the selected reporting period.",
+            bookings: "Booking analytics use accepted bookings with Confirmed, Preparing, or Completed status and event dates within the selected reporting period. The monthly timeline shows booking volume by event month, while the weekday pattern combines all selected months by weekday.",
             products: "Product revenue is grouped by the category of products recorded in POS order items.",
             packages: "Package booking value uses agreed price, package price, or recorded payment for accepted bookings. Pending Review and Cancelled bookings are excluded.",
         },

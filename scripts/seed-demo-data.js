@@ -1,138 +1,51 @@
+
+/* eslint-disable @typescript-eslint/no-require-imports */
+/*
+  StockNBook defense demo data.
+  Recreates ONLY the Demo Party Store with realistic Inventory, Packages,
+  Bookings, POS, Analytics, Forecasting, Reports, and Subscription data.
+*/
 require("dotenv").config({ path: ".env.local" });
 
 const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
+const { faker } = require("@faker-js/faker");
 
 const DEMO_STORE_EMAIL = "demo.owner@stocknbook.com";
 const DEMO_STORE_SLUG = "demo-party-store";
 const DEMO_PASSWORD = "Demo12345";
 
-const TARGET_PRODUCT_COUNT = 120;
-const TARGET_PACKAGE_COUNT = 15;
-const TARGET_BOOKING_COUNT = 120;
-const TARGET_ORDER_COUNT = 150;
+const TARGET_PRODUCTS = 120;
+const TARGET_PACKAGES = 15;
+const TARGET_BOOKINGS = 120;
+const CURRENT_YEAR_ORDERS = 360;
+const BASELINE_ORDERS = 240;
 
-const managerPermissionSets = [
+const BRANCHES = [
     {
-        label: "Full Access Manager",
-        permissions: {
-            dashboard: true,
-            bookings: true,
-            packages: true,
-            packages_manage: true,
-            inventory: true,
-            pos: true,
-            reports: true,
-            staff_management: true,
-            staff_roles: true,
-            branch_settings: true,
-        },
-    },
-    {
-        label: "Operations Manager",
-        permissions: {
-            dashboard: true,
-            bookings: true,
-            packages: true,
-            packages_manage: true,
-            inventory: true,
-            pos: true,
-            reports: false,
-            staff_management: false,
-            staff_roles: false,
-            branch_settings: false,
-        },
-    },
-    {
-        label: "Bookings Manager",
-        permissions: {
-            dashboard: true,
-            bookings: true,
-            packages: true,
-            packages_manage: false,
-            inventory: false,
-            pos: false,
-            reports: false,
-            staff_management: false,
-            staff_roles: false,
-            branch_settings: false,
-        },
-    },
-];
-
-const staffPermissionSets = [
-    {
-        label: "Bookings Staff",
-        permissions: {
-            dashboard: true,
-            bookings: true,
-            packages: false,
-            packages_manage: false,
-            inventory: false,
-            pos: false,
-            reports: false,
-            staff_management: false,
-            staff_roles: false,
-            branch_settings: false,
-        },
-    },
-    {
-        label: "Inventory and POS Staff",
-        permissions: {
-            dashboard: true,
-            bookings: false,
-            packages: false,
-            packages_manage: false,
-            inventory: true,
-            pos: true,
-            reports: false,
-            staff_management: false,
-            staff_roles: false,
-            branch_settings: false,
-        },
-    },
-    {
-        label: "Packages Staff",
-        permissions: {
-            dashboard: true,
-            bookings: false,
-            packages: true,
-            packages_manage: false,
-            inventory: false,
-            pos: false,
-            reports: false,
-            staff_management: false,
-            staff_roles: false,
-            branch_settings: false,
-        },
-    },
-];
-
-const branchData = [
-    {
-        branch_name: "Main Branch",
-        contact_number: "09170000001",
+        name: "Main Branch",
         address: "Quezon City",
-        manager_name: "Ana Cruz",
-        manager_email: "demo.manager1@stocknbook.com",
+        contact: "09170000001",
+        manager: "Ana Cruz",
+        email: "demo.manager1@stocknbook.com",
     },
     {
-        branch_name: "North Branch",
-        contact_number: "09170000002",
+        name: "North Branch",
         address: "Caloocan City",
-        manager_name: "Ben Santos",
-        manager_email: "demo.manager2@stocknbook.com",
+        contact: "09170000002",
+        manager: "Ben Santos",
+        email: "demo.manager2@stocknbook.com",
     },
     {
-        branch_name: "South Branch",
-        contact_number: "09170000003",
+        name: "South Branch",
         address: "Parañaque City",
-        manager_name: "Carla Reyes",
-        manager_email: "demo.manager3@stocknbook.com",
+        contact: "09170000003",
+        manager: "Carla Reyes",
+        email: "demo.manager3@stocknbook.com",
     },
 ];
 
-const categories = [
+const CATEGORIES = [
     "Balloons",
     "Backdrops",
     "Tables",
@@ -147,7 +60,7 @@ const categories = [
     "Catering Tools",
 ];
 
-const productNames = [
+const PRODUCT_NAMES = [
     "Latex Balloon Set",
     "Foil Balloon Number",
     "Balloon Arch Kit",
@@ -180,7 +93,7 @@ const productNames = [
     "Centerpiece Set",
 ];
 
-const eventTypes = [
+const EVENT_TYPES = [
     "Birthday",
     "Wedding",
     "Debut",
@@ -191,139 +104,202 @@ const eventTypes = [
     "Baby Shower",
 ];
 
-const customerFirstNames = [
-    "Maria",
-    "Ana",
-    "Carla",
-    "Sofia",
-    "Mika",
-    "Jasmine",
-    "Patricia",
-    "Angela",
-    "Mark",
-    "John",
-    "Ben",
-    "Carlo",
-    "Miguel",
-    "Paulo",
-    "Daniel",
+const THEMES = [
+    "Elegant Gold",
+    "Pastel Pink",
+    "Rustic Garden",
+    "Modern Minimalist",
+    "Royal Blue",
+    "Tropical Summer",
 ];
 
-const customerLastNames = [
-    "Santos",
-    "Cruz",
-    "Reyes",
-    "Garcia",
-    "Dela Cruz",
-    "Mendoza",
-    "Ramos",
-    "Torres",
-    "Flores",
-    "Castillo",
+const VENUES = [
+    "Quezon City Event Venue",
+    "Makati Function Hall",
+    "Pasig Garden Pavilion",
+    "Taguig Events Center",
+    "Parañaque Community Hall",
 ];
 
-const subscriptionPlans = [
-    {
-        code: "starter",
-        name: "Starter",
-        label: "Free",
-        price: 0,
-        inventoryLimit: 50,
-        bookingLimit: 20,
-        staffLimit: 1,
-        features: [
-            "Inventory and product catalog",
-            "Booking management",
-            "Basic POS and sales recording",
-            "Up to 50 inventory items",
-            "Up to 20 bookings per month",
-            "1 owner or administrator account",
-            "Basic dashboard overview",
-        ],
-    },
-    {
-        code: "business",
-        name: "Business",
-        label: "Standard",
-        price: 499,
-        inventoryLimit: 500,
-        bookingLimit: null,
-        staffLimit: 3,
-        features: [
-            "Everything included in Starter",
-            "Up to 500 inventory items",
-            "Unlimited bookings",
-            "Up to 3 staff accounts",
-            "Low-stock notifications",
-            "Sales and booking analytics",
-            "Downloadable reports",
-            "Complete transaction history",
-        ],
-    },
-    {
-        code: "enterprise",
-        name: "Enterprise",
-        label: "Advanced",
-        price: 1299,
-        inventoryLimit: 2000,
-        bookingLimit: null,
-        staffLimit: 10,
-        features: [
-            "Everything included in Business",
-            "Up to 2,000 inventory items",
-            "Unlimited bookings",
-            "Up to 10 staff accounts",
-            "Advanced business analytics",
-            "Sales forecasting",
-            "Multi-role account access",
-            "Extended transaction history",
-        ],
-    },
-];
+/* Lower demand in January and rainy months; high demand in graduation and holiday months. */
+const MONTH_FACTOR = {
+    1: 0.55,
+    2: 0.75,
+    3: 0.95,
+    4: 1.35,
+    5: 1.55,
+    6: 1.1,
+    7: 0.7,
+    8: 0.62,
+    9: 0.72,
+    10: 0.95,
+    11: 1.2,
+    12: 1.6,
+};
+
+/* Monday is quiet; Friday to Sunday is busier. */
+const DAY_FACTOR = {
+    0: 1.45,
+    1: 0.55,
+    2: 0.68,
+    3: 0.85,
+    4: 0.95,
+    5: 1.12,
+    6: 1.35,
+};
+
+function dbConfig() {
+    const required = ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"];
+    const missing = required.filter(
+        (key) => !String(process.env[key] || "").trim()
+    );
+
+    if (missing.length) {
+        throw new Error(`Missing ${missing.join(", ")} in .env.local.`);
+    }
+
+    return {
+        host: process.env.DB_HOST,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_NAME,
+        port: Number(process.env.DB_PORT || 3306),
+        ssl:
+            String(process.env.DB_SSL || "").toLowerCase() === "true"
+                ? { rejectUnauthorized: false }
+                : undefined,
+    };
+}
+
+function num(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
 
 function pick(list, index) {
-    return list[index % list.length];
+    return list[Math.abs(Number(index) || 0) % list.length];
 }
 
-function randomInt(min, max, index) {
-    const raw = Math.abs(Math.sin(index + 1) * 10000);
-    return Math.floor(raw % (max - min + 1)) + min;
+function chance(seed) {
+    const value =
+        Math.sin(Number(seed) * 12.9898 + 78.233) * 43758.5453;
+
+    return value - Math.floor(value);
 }
 
-function futureDate(daysFromNow) {
-    const date = new Date();
-    date.setDate(date.getDate() + daysFromNow);
+function isoDate(date) {
     return date.toISOString().slice(0, 10);
 }
 
-function pastDate(daysAgo) {
-    const date = new Date();
-    date.setDate(date.getDate() - daysAgo);
-    return date.toISOString().slice(0, 10);
+function addDays(date, days) {
+    const next = new Date(date.getTime());
+    next.setUTCDate(next.getUTCDate() + days);
+    return next;
 }
 
-function makeCustomerName(index) {
-    return `${pick(customerFirstNames, index)} ${pick(customerLastNames, index)}`;
+function todayUtc() {
+    const today = new Date();
+
+    return new Date(
+        Date.UTC(
+            today.getUTCFullYear(),
+            today.getUTCMonth(),
+            today.getUTCDate()
+        )
+    );
 }
 
-function parseJson(value, fallback) {
-    if (Array.isArray(value) || (value && typeof value === "object")) {
-        return value;
+function futureDate(days) {
+    return isoDate(addDays(todayUtc(), days));
+}
+
+function pastDate(days) {
+    return isoDate(addDays(todayUtc(), -days));
+}
+
+function completeMonthPeriods() {
+    const today = todayUtc();
+
+    const lastCompleteMonthEnd = new Date(
+        Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0)
+    );
+
+    const currentStart = new Date(
+        Date.UTC(
+            lastCompleteMonthEnd.getUTCFullYear(),
+            lastCompleteMonthEnd.getUTCMonth() - 11,
+            1
+        )
+    );
+
+    const baselineStart = new Date(
+        Date.UTC(
+            currentStart.getUTCFullYear() - 1,
+            currentStart.getUTCMonth(),
+            1
+        )
+    );
+
+    const baselineEnd = addDays(currentStart, -1);
+
+    return {
+        currentStart,
+        currentEnd: lastCompleteMonthEnd,
+        baselineStart,
+        baselineEnd,
+    };
+}
+
+function weekendDate(startOffset) {
+    for (let offset = 0; offset < 14; offset += 1) {
+        const date = addDays(todayUtc(), startOffset + offset);
+        const weekday = date.getUTCDay();
+
+        if (weekday === 0 || weekday === 6) {
+            return isoDate(date);
+        }
     }
 
-    if (typeof value !== "string" || !value.trim()) {
-        return fallback;
-    }
+    return futureDate(startOffset);
+}
 
-    try {
-        return JSON.parse(value);
-    } catch {
-        return fallback;
+async function tableHasColumn(db, table, column) {
+    const [rows] = await db.execute(
+        `SELECT 1
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+AND table_name = ?
+    AND column_name = ?
+        LIMIT 1`,
+        [table, column]
+    );
+
+    return rows.length > 0;
+}
+
+async function deleteByStoreId(db, table, storeId) {
+    if (await tableHasColumn(db, table, "store_id")) {
+        await db.execute(
+            `DELETE FROM \`${table}\` WHERE store_id = ?`,
+    [storeId]
+);
+}
+}
+
+async function deleteBySubscriptionId(db, table, storeId) {
+    if (await tableHasColumn(db, table, "subscription_id")) {
+        await db.execute(
+            `DELETE FROM \`${table}\`
+             WHERE subscription_id IN (
+                SELECT id FROM subscriptions WHERE store_id = ?
+             )`,
+            [storeId]
+        );
     }
 }
 
-async function getDemoStore(db, passwordHash) {
-    const [existingStores] = await db.execute(
+async function resetOldDemoStore(db) {
+    const [stores] = await db.execute(
         `SELECT id
          FROM stores
          WHERE email = ? OR slug = ?
@@ -332,14 +308,69 @@ async function getDemoStore(db, passwordHash) {
         [DEMO_STORE_EMAIL, DEMO_STORE_SLUG]
     );
 
-    if (existingStores.length > 0) {
-        const storeId = existingStores[0].id;
-        console.log(`Using existing demo store. store_id=${storeId}`);
-        return storeId;
+    if (!stores.length) {
+        return;
     }
 
+    const storeId = Number(stores[0].id);
+
+    console.log(
+        `Removing existing Demo Party Store data (store_id=${storeId})...`
+    );
+
+    await db.execute(
+        `DELETE FROM order_items
+         WHERE order_id IN (
+            SELECT order_id FROM orders WHERE store_id = ?
+         )`,
+        [storeId]
+    );
+
+    if (await tableHasColumn(db, "booking_items", "booking_id")) {
+        await db.execute(
+            `DELETE FROM booking_items
+             WHERE booking_id IN (
+                SELECT id FROM bookings WHERE store_id = ?
+             )`,
+            [storeId]
+        );
+    }
+
+    for (const table of [
+        "payment_submissions",
+        "business_subscriptions",
+        "subscription_audit_logs",
+    ]) {
+        await deleteBySubscriptionId(db, table, storeId);
+        await deleteByStoreId(db, table, storeId);
+    }
+
+    await deleteByStoreId(db, "subscriptions", storeId);
+
+    await db.execute("DELETE FROM orders WHERE store_id = ?", [storeId]);
+    await db.execute("DELETE FROM bookings WHERE store_id = ?", [storeId]);
+    await db.execute("DELETE FROM packages WHERE store_id = ?", [storeId]);
+
+    await db.execute(
+        `DELETE FROM product_variants
+         WHERE product_id IN (
+            SELECT id FROM products WHERE store_id = ?
+         )`,
+        [storeId]
+    );
+
+    await db.execute("DELETE FROM products WHERE store_id = ?", [storeId]);
+    await db.execute("DELETE FROM categories WHERE store_id = ?", [storeId]);
+    await db.execute("DELETE FROM staff WHERE store_id = ?", [storeId]);
+    await db.execute("DELETE FROM managers WHERE store_id = ?", [storeId]);
+    await db.execute("DELETE FROM branches WHERE store_id = ?", [storeId]);
+    await db.execute("DELETE FROM stores WHERE id = ?", [storeId]);
+}
+
+async function createStoreBranchesAndUsers(db, passwordHash) {
     const [storeResult] = await db.execute(
-        `INSERT INTO stores (store_name, owner_name, email, password, slug)
+        `INSERT INTO stores
+         (store_name, owner_name, email, password, slug)
          VALUES (?, ?, ?, ?, ?)`,
         [
             "Demo Party Store",
@@ -350,311 +381,373 @@ async function getDemoStore(db, passwordHash) {
         ]
     );
 
-    console.log(`Created demo store. store_id=${storeResult.insertId}`);
-    return storeResult.insertId;
-}
+    const storeId = Number(storeResult.insertId);
+    const branches = [];
 
-async function ensureBranchesAndUsers(db, storeId, passwordHash) {
-    const branchIds = [];
+    for (let index = 0; index < BRANCHES.length; index += 1) {
+        const source = BRANCHES[index];
 
-    for (let branchIndex = 0; branchIndex < branchData.length; branchIndex++) {
-        const branch = branchData[branchIndex];
-        const branchNumber = branchIndex + 1;
-        const managerPermissionSet = managerPermissionSets[branchIndex];
-
-        const [existingBranches] = await db.execute(
-            `SELECT id
-             FROM branches
-             WHERE store_id = ? AND branch_name = ?
-             LIMIT 1`,
-            [storeId, branch.branch_name]
+        const [branchResult] = await db.execute(
+            `INSERT INTO branches
+             (store_id, branch_name, contact_number, address)
+             VALUES (?, ?, ?, ?)`,
+            [storeId, source.name, source.contact, source.address]
         );
 
-        let branchId;
+        const branchId = Number(branchResult.insertId);
 
-        if (existingBranches.length > 0) {
-            branchId = existingBranches[0].id;
-        } else {
-            const [branchResult] = await db.execute(
-                `INSERT INTO branches (store_id, branch_name, contact_number, address)
-                 VALUES (?, ?, ?, ?)`,
-                [
-                    storeId,
-                    branch.branch_name,
-                    branch.contact_number,
-                    branch.address,
-                ]
-            );
+        const managerPermissions = {
+            dashboard: true,
+            bookings: true,
+            packages: true,
+            packages_manage: true,
+            inventory: true,
+            pos: true,
+            reports: true,
+            staff_management: index === 0,
+            staff_roles: index === 0,
+            branch_settings: index === 0,
+        };
 
-            branchId = branchResult.insertId;
-        }
-
-        branchIds.push(branchId);
-
-        const [existingManagers] = await db.execute(
-            `SELECT id
-             FROM managers
-             WHERE store_id = ? AND manager_email = ?
-             LIMIT 1`,
-            [storeId, branch.manager_email]
-        );
-
-        let managerId;
-
-        if (existingManagers.length > 0) {
-            managerId = existingManagers[0].id;
-        } else {
-            const [managerResult] = await db.execute(
-                `INSERT INTO managers
-                    (
-                        store_id,
-                        branch_id,
-                        manager_name,
-                        manager_email,
-                        password,
-                        status,
-                        permissions
-                    )
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    storeId,
-                    branchId,
-                    `${branch.manager_name} (${managerPermissionSet.label})`,
-                    branch.manager_email,
-                    passwordHash,
-                    "active",
-                    JSON.stringify(managerPermissionSet.permissions),
-                ]
-            );
-
-            managerId = managerResult.insertId;
-        }
-
-        for (let staffIndex = 0; staffIndex < staffPermissionSets.length; staffIndex++) {
-            const staffNumber = staffIndex + 1;
-            const staffPermissionSet = staffPermissionSets[staffIndex];
-            const staffEmail = `demo.staff${branchNumber}-${staffNumber}@stocknbook.com`;
-
-            const [existingStaff] = await db.execute(
-                `SELECT id
-                 FROM staff
-                 WHERE store_id = ? AND staff_email = ?
-                 LIMIT 1`,
-                [storeId, staffEmail]
-            );
-
-            if (existingStaff.length === 0) {
-                await db.execute(
-                    `INSERT INTO staff
-                        (
-                            store_id,
-                            branch_id,
-                            manager_id,
-                            staff_name,
-                            staff_email,
-                            password,
-                            status,
-                            permissions
-                        )
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [
-                        storeId,
-                        branchId,
-                        managerId,
-                        `${branch.branch_name} ${staffPermissionSet.label}`,
-                        staffEmail,
-                        passwordHash,
-                        "active",
-                        JSON.stringify(staffPermissionSet.permissions),
-                    ]
-                );
-            }
-        }
-    }
-
-    console.log(`Ensured ${branchIds.length} branches, managers, and staff accounts.`);
-    return branchIds;
-}
-
-async function ensureCategories(db, storeId) {
-    let createdCount = 0;
-
-    for (const categoryName of categories) {
-        const [existingCategories] = await db.execute(
-            `SELECT id
-             FROM categories
-             WHERE store_id = ? AND category_name = ?
-             LIMIT 1`,
-            [storeId, categoryName]
-        );
-
-        if (existingCategories.length === 0) {
-            await db.execute(
-                `INSERT INTO categories (store_id, category_name, description, status)
-                 VALUES (?, ?, ?, ?)`,
-                [
-                    storeId,
-                    categoryName,
-                    `Demo category for ${categoryName.toLowerCase()} items.`,
-                    "active",
-                ]
-            );
-
-            createdCount += 1;
-        }
-    }
-
-    console.log(`Ensured ${categories.length} categories (${createdCount} added).`);
-}
-
-async function getProducts(db, storeId) {
-    const [rows] = await db.execute(
-        `SELECT id, name, sales_price AS price
-         FROM products
-         WHERE store_id = ?
-         ORDER BY id ASC`,
-        [storeId]
-    );
-
-    return rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        price: Number(row.price),
-    }));
-}
-
-async function ensureProducts(db, storeId, branchIds) {
-    let products = await getProducts(db, storeId);
-    const existingCount = products.length;
-
-    for (let i = existingCount + 1; i <= TARGET_PRODUCT_COUNT; i++) {
-        const category = pick(categories, i);
-        const branchId = pick(branchIds, i);
-        const baseName = pick(productNames, i);
-        const stock = randomInt(2, 150, i);
-        const alertLevel = randomInt(5, 20, i);
-        const originalPrice = randomInt(80, 3000, i);
-        const salesPrice = originalPrice + randomInt(50, 1200, i);
-        const hasVariants = i <= 30 ? 1 : 0;
-
-        const [productResult] = await db.execute(
-            `INSERT INTO products
-                (
-                    store_id,
-                    branch_id,
-                    name,
-                    category,
-                    stock,
-                    alert_level,
-                    original_price,
-                    sales_price,
-                    has_variants
-                )
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        const [managerResult] = await db.execute(
+            `INSERT INTO managers
+             (
+                store_id,
+                branch_id,
+                manager_name,
+                manager_email,
+                password,
+                status,
+                permissions
+             )
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
                 storeId,
                 branchId,
-                `${baseName} ${i}`,
-                category,
-                stock,
-                alertLevel,
-                originalPrice,
-                salesPrice,
-                hasVariants,
+                source.manager,
+                source.email,
+                passwordHash,
+                "active",
+                JSON.stringify(managerPermissions),
             ]
         );
 
-        if (hasVariants) {
+        const managerId = Number(managerResult.insertId);
+
+        const staffSets = [
+            {
+                label: "Bookings Staff",
+                permissions: {
+                    dashboard: true,
+                    bookings: true,
+                    packages: false,
+                    packages_manage: false,
+                    inventory: false,
+                    pos: false,
+                    reports: false,
+                    staff_management: false,
+                    staff_roles: false,
+                    branch_settings: false,
+                },
+            },
+            {
+                label: "Inventory and POS Staff",
+                permissions: {
+                    dashboard: true,
+                    bookings: false,
+                    packages: false,
+                    packages_manage: false,
+                    inventory: true,
+                    pos: true,
+                    reports: false,
+                    staff_management: false,
+                    staff_roles: false,
+                    branch_settings: false,
+                },
+            },
+            {
+                label: "Packages Staff",
+                permissions: {
+                    dashboard: true,
+                    bookings: false,
+                    packages: true,
+                    packages_manage: false,
+                    inventory: false,
+                    pos: false,
+                    reports: false,
+                    staff_management: false,
+                    staff_roles: false,
+                    branch_settings: false,
+                },
+            },
+        ];
+
+        for (
+            let staffIndex = 0;
+            staffIndex < staffSets.length;
+            staffIndex += 1
+        ) {
+            const staff = staffSets[staffIndex];
+
             await db.execute(
-                `INSERT INTO product_variants
-                    (
-                        product_id,
-                        variant_values,
-                        stock,
-                        alert_level,
-                        original_price,
-                        sales_price
-                    )
-                 VALUES (?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO staff
+                 (
+                    store_id,
+                    branch_id,
+                    manager_id,
+                    staff_name,
+                    staff_email,
+                    password,
+                    status,
+                    permissions
+                 )
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
-                    productResult.insertId,
-                    JSON.stringify({
-                        color: pick(["Gold", "Silver", "Pink", "Blue", "White"], i),
-                        size: pick(["Small", "Medium", "Large"], i),
-                    }),
-                    randomInt(1, 80, i),
-                    randomInt(3, 15, i),
-                    originalPrice,
-                    salesPrice,
+                    storeId,
+                    branchId,
+                    managerId,
+                    `${source.name} ${staff.label}`,
+                    `demo.staff${index + 1}-${staffIndex + 1}@stocknbook.com`,
+                    passwordHash,
+                    "active",
+                    JSON.stringify(staff.permissions),
                 ]
             );
         }
+
+        branches.push({
+            id: branchId,
+            name: source.name,
+        });
     }
 
-    products = await getProducts(db, storeId);
-
-    console.log(
-        `Ensured ${products.length} products (${Math.max(0, products.length - existingCount)} added).`
-    );
-
-    return products;
+    return { storeId, branches };
 }
 
-async function getPackages(db, storeId) {
-    const [rows] = await db.execute(
-        `SELECT id, name, package_price, inclusions
-         FROM packages
-         WHERE store_id = ?
-         ORDER BY id ASC`,
-        [storeId]
-    );
-
-    return rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        price: Number(row.package_price),
-        inclusions: parseJson(row.inclusions, []),
-    }));
+async function createCategories(db, storeId) {
+    for (const category of CATEGORIES) {
+        await db.execute(
+            `INSERT INTO categories
+             (store_id, category_name, description, status)
+             VALUES (?, ?, ?, ?)`,
+            [
+                storeId,
+                category,
+                `Demo category for ${category.toLowerCase()} items.`,
+                "active",
+            ]
+        );
+    }
 }
 
-async function ensurePackages(db, storeId, branchIds) {
-    let packages = await getPackages(db, storeId);
-    const existingCount = packages.length;
+function productStock(index, hasVariants) {
+    if (hasVariants) {
+        if (index <= 6) return 0;
+        if (index <= 15) return 5 + (index % 4);
 
-    for (let i = existingCount + 1; i <= TARGET_PACKAGE_COUNT; i++) {
-        const branchId = pick(branchIds, i);
-        const packagePrice = randomInt(3500, 25000, i);
-        const originalValue = packagePrice + randomInt(1000, 5000, i);
-        const packageName = `${pick(eventTypes, i)} Package ${i}`;
+        return 55 + ((index * 9) % 95);
+    }
 
-        const inclusions = [
-            { item: "Backdrop setup", quantity: 1 },
-            { item: "Table and chair setup", quantity: randomInt(10, 50, i) },
-            { item: "Balloon decoration", quantity: randomInt(20, 100, i) },
-            { item: "Basic lights", quantity: 2 },
+    if (index <= 40) return 0;
+    if (index <= 60) return 4 + (index % 5);
+
+    return 45 + ((index * 13) % 125);
+}
+
+async function createProducts(db, storeId, branches) {
+    const products = [];
+    const saleItems = [];
+
+    for (let index = 1; index <= TARGET_PRODUCTS; index += 1) {
+        const branch = pick(branches, index - 1);
+        const hasVariants = index <= 30;
+        const alertLevel = 8 + (index % 10);
+        const originalPrice = 100 + ((index * 47) % 2800);
+        const salesPrice = originalPrice + 80 + ((index * 29) % 1200);
+        const name = `${pick(PRODUCT_NAMES, index - 1)} ${index}`;
+
+        const [result] = await db.execute(
+            `INSERT INTO products
+             (
+                store_id,
+                branch_id,
+                name,
+                category,
+                stock,
+                alert_level,
+                original_price,
+                sales_price,
+                has_variants
+             )
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                storeId,
+                branch.id,
+                name,
+                pick(CATEGORIES, index - 1),
+                productStock(index, hasVariants),
+                alertLevel,
+                originalPrice,
+                salesPrice,
+                hasVariants ? 1 : 0,
+            ]
+        );
+
+        const product = {
+            id: Number(result.insertId),
+            branchId: branch.id,
+            branchName: branch.name,
+            name,
+            category: pick(CATEGORIES, index - 1),
+            salesPrice,
+        };
+
+        products.push(product);
+
+        if (!hasVariants) {
+            saleItems.push({
+                productId: product.id,
+                variantId: null,
+                branchId: branch.id,
+                productName: name,
+                variantLabel: "",
+                unitPrice: salesPrice,
+            });
+
+            continue;
+        }
+
+        const variants = [
+            {
+                color: pick(
+                    ["Gold", "Silver", "Pink", "Blue", "White"],
+                    index
+                ),
+                size: "Small",
+            },
+            {
+                color: pick(
+                    ["Gold", "Silver", "Pink", "Blue", "White"],
+                    index + 1
+                ),
+                size: "Large",
+            },
         ];
 
-        await db.execute(
+        for (
+            let variantIndex = 0;
+            variantIndex < variants.length;
+            variantIndex += 1
+        ) {
+            const values = variants[variantIndex];
+
+            const variantStock =
+                index <= 6
+                    ? 0
+                    : index <= 15
+                        ? 4 + ((index + variantIndex) % 4)
+                        : 30 + ((index * 7 + variantIndex * 13) % 65);
+
+            const variantPrice = salesPrice + variantIndex * 120;
+
+            const [variantResult] = await db.execute(
+                `INSERT INTO product_variants
+                 (
+                    product_id,
+                    variant_values,
+                    stock,
+                    alert_level,
+                    original_price,
+                    sales_price
+                 )
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [
+                    product.id,
+                    JSON.stringify(values),
+                    variantStock,
+                    Math.max(3, Math.floor(alertLevel / 2)),
+                    originalPrice,
+                    variantPrice,
+                ]
+            );
+
+            saleItems.push({
+                productId: product.id,
+                variantId: Number(variantResult.insertId),
+                branchId: branch.id,
+                productName: name,
+                variantLabel: `${values.color} / ${values.size}`,
+                unitPrice: variantPrice,
+            });
+        }
+    }
+
+    return { products, saleItems };
+}
+
+function itemsForBranch(saleItems, branchId) {
+    return saleItems.filter((item) => item.branchId === branchId);
+}
+
+function packageInclusions(saleItems, branchId, index) {
+    const choices = itemsForBranch(saleItems, branchId);
+
+    return [0, 4, 9, 14].map((offset, position) => {
+        const item = pick(choices, index + offset);
+
+        return {
+            item: `${item.productName}${
+                item.variantLabel ? ` (${item.variantLabel})` : ""
+            }`,
+            productId: item.productId,
+            product_id: item.productId,
+            ...(item.variantId
+                ? {
+                    variantId: item.variantId,
+                    variant_id: item.variantId,
+                }
+                : {}),
+            quantity: 1 + ((index + position) % 4),
+        };
+    });
+}
+
+async function createPackages(db, storeId, branches, saleItems) {
+    const packages = [];
+
+    for (let index = 1; index <= TARGET_PACKAGES; index += 1) {
+        const branch = pick(branches, index - 1);
+        const name = `${pick(EVENT_TYPES, index - 1)} Package ${index}`;
+        const packagePrice = 3500 + ((index * 1300) % 22000);
+        const originalValue = packagePrice + 1500 + ((index * 400) % 3500);
+
+        const inclusions = packageInclusions(
+            saleItems,
+            branch.id,
+            index
+        );
+
+        const [result] = await db.execute(
             `INSERT INTO packages
-                (
-                    store_id,
-                    branch_id,
-                    name,
-                    description,
-                    original_value,
-                    discount_type,
-                    discount_value,
-                    package_price,
-                    duration,
-                    status,
-                    inclusions
-                )
+             (
+                store_id,
+                branch_id,
+                name,
+                description,
+                original_value,
+                discount_type,
+                discount_value,
+                package_price,
+                duration,
+                status,
+                inclusions
+             )
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 storeId,
-                branchId,
-                packageName,
-                `Demo ${packageName.toLowerCase()} for event clients.`,
+                branch.id,
+                name,
+                `Demo ${name.toLowerCase()} for event clients.`,
                 originalValue,
                 "amount",
                 originalValue - packagePrice,
@@ -664,241 +757,478 @@ async function ensurePackages(db, storeId, branchIds) {
                 JSON.stringify(inclusions),
             ]
         );
+
+        packages.push({
+            id: Number(result.insertId),
+            branchId: branch.id,
+            name,
+            price: packagePrice,
+            inclusions,
+        });
     }
-
-    packages = await getPackages(db, storeId);
-
-    console.log(
-        `Ensured ${packages.length} packages (${Math.max(0, packages.length - existingCount)} added).`
-    );
 
     return packages;
 }
 
-async function ensureBookings(db, storeId, branchIds, packages) {
-    if (packages.length === 0) {
-        throw new Error("Cannot create bookings because no packages were found.");
+function bookingPlan(index) {
+    if (index <= 55) {
+        return {
+            status: "completed",
+            date: pastDate(20 + ((index * 13) % 330)),
+        };
     }
 
-    const [countRows] = await db.execute(
-        `SELECT COUNT(*) AS total
-         FROM bookings
-         WHERE store_id = ?`,
-        [storeId]
+    if (index <= 70) {
+        return {
+            status: "cancelled",
+            date: pastDate(10 + ((index * 17) % 300)),
+        };
+    }
+
+    if (index <= 85) {
+        return {
+            status: "confirmed",
+            date: weekendDate(2 + ((index * 2) % 25)),
+        };
+    }
+
+    if (index <= 95) {
+        return {
+            status: "preparing",
+            date: weekendDate(1 + ((index * 2) % 20)),
+        };
+    }
+
+    return {
+        status: "pending",
+        date: weekendDate(35 + ((index * 3) % 70)),
+    };
+}
+
+function packageForBranch(packages, branchId, index) {
+    const choices = packages.filter(
+        (item) => item.branchId === branchId
     );
 
-    const existingCount = Number(countRows[0].total);
+    return choices.length ? pick(choices, index) : pick(packages, index);
+}
 
-    for (let i = existingCount + 1; i <= TARGET_BOOKING_COUNT; i++) {
-        const branchId = pick(branchIds, i);
-        const selectedPackage = pick(packages, i);
-        const eventType = pick(eventTypes, i);
-        const bookingType = i % 4 === 0 ? "custom" : "package";
+async function createBookings(db, storeId, branches, packages) {
+    for (let index = 1; index <= TARGET_BOOKINGS; index += 1) {
+        const branch = pick(branches, index - 1);
+        const pack = packageForBranch(packages, branch.id, index);
+        const plan = bookingPlan(index);
 
-        const bookingStatus =
-            i <= 30
-                ? "completed"
-                : i <= 45
-                    ? "cancelled"
-                    : pick(["pending", "confirmed"], i);
+        const bookingType = index % 4 === 0 ? "custom" : "package";
 
-        const eventDate =
-            bookingStatus === "completed" || bookingStatus === "cancelled"
-                ? pastDate(randomInt(1, 120, i))
-                : futureDate(randomInt(1, 180, i));
-
-        const packagePrice = Number(selectedPackage.price);
         const agreedPrice =
             bookingType === "custom"
-                ? packagePrice + randomInt(500, 3000, i)
-                : packagePrice;
+                ? pack.price + 500 + ((index * 137) % 3000)
+                : pack.price;
 
-        const requiredDownPayment =
-            bookingStatus === "cancelled"
-                ? 0
-                : Math.round(agreedPrice * 0.5 * 100) / 100;
+        const paymentStatus =
+            plan.status === "completed"
+                ? "paid"
+                : plan.status === "cancelled"
+                    ? "unpaid"
+                    : index % 2 === 0
+                        ? "partial"
+                        : "unpaid";
 
-        let paymentStatus = "unpaid";
-        let amountPaid = 0;
-        let balance = agreedPrice;
+        const amountPaid =
+            paymentStatus === "paid"
+                ? agreedPrice
+                : paymentStatus === "partial"
+                    ? Math.round(agreedPrice * 0.5 * 100) / 100
+                    : 0;
 
-        if (bookingStatus === "completed") {
-            paymentStatus = "paid";
-            amountPaid = agreedPrice;
-            balance = 0;
-        } else if (bookingStatus === "cancelled") {
-            paymentStatus = "unpaid";
-            amountPaid = 0;
-            balance = 0;
-        } else if (i % 2 === 0) {
-            paymentStatus = "partial";
-            amountPaid = requiredDownPayment;
-            balance = agreedPrice - amountPaid;
-        }
+        const customer = faker.person.fullName();
 
-        const customerName = makeCustomerName(i);
         const packageJson = JSON.stringify({
-            id: selectedPackage.id,
-            name: selectedPackage.name,
-            price: packagePrice,
-            inclusions: selectedPackage.inclusions,
+            id: pack.id,
+            packageId: pack.id,
+            name: pack.name,
+            price: pack.price,
+            inclusions: pack.inclusions,
         });
 
         await db.execute(
             `INSERT INTO bookings
-                (
-                    store_id,
-                    branch_id,
-                    booking_type,
-                    name,
-                    phone,
-                    event_date,
-                    event_type,
-                    package_name,
-                    custom_order,
-                    notes,
-                    status,
-                    booking_reference,
-                    package_json,
-                    packageJSON,
-                    facebook_name,
-                    email,
-                    event_time,
-                    theme,
-                    venue,
-                    agreed_price,
-                    package_price,
-                    payment_status,
-                    required_down_payment,
-                    amount_paid,
-                    balance
-                )
+             (
+                store_id,
+                branch_id,
+                booking_type,
+                name,
+                phone,
+                event_date,
+                event_type,
+                package_name,
+                custom_order,
+                notes,
+                status,
+                booking_reference,
+                package_json,
+                packageJSON,
+                facebook_name,
+                email,
+                event_time,
+                theme,
+                venue,
+                agreed_price,
+                package_price,
+                payment_status,
+                required_down_payment,
+                amount_paid,
+                balance
+             )
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 storeId,
-                branchId,
+                branch.id,
                 bookingType,
-                customerName,
-                `09${String(170000000 + i).slice(0, 9)}`,
-                eventDate,
-                eventType,
-                selectedPackage.name,
+                customer,
+                faker.phone.number("09#########"),
+                plan.date,
+                pick(EVENT_TYPES, index - 1),
+                pack.name,
                 bookingType === "custom"
                     ? "Custom balloon and backdrop arrangement"
                     : null,
-                `Demo booking notes ${i}`,
-                bookingStatus,
-                `BK-DEMO-${String(i).padStart(5, "0")}`,
+                `Demo ${plan.status} booking for forecasting.`,
+                plan.status,
+                `BKG-DEMO-${String(index).padStart(5, "0")}`,
                 packageJson,
                 packageJson,
-                makeCustomerName(i + 2),
-                `customer${i}@example.com`,
-                pick(["9:00 AM", "1:00 PM", "3:00 PM", "6:00 PM"], i),
+                customer,
+                faker.internet
+                    .email({
+                        firstName: customer.split(" ")[0],
+                    })
+                    .toLowerCase(),
                 pick(
-                    [
-                        "Elegant Gold",
-                        "Pastel Pink",
-                        "Rustic Garden",
-                        "Modern Minimalist",
-                    ],
-                    i
+                    ["9:00 AM", "1:00 PM", "3:00 PM", "6:00 PM"],
+                    index - 1
                 ),
-                `${pick(
-                    ["Quezon City", "Makati", "Pasig", "Taguig", "Parañaque"],
-                    i
-                )} Event Venue`,
+                pick(THEMES, index - 1),
+                pick(VENUES, index - 1),
                 agreedPrice,
-                packagePrice,
+                pack.price,
                 paymentStatus,
-                requiredDownPayment,
+                plan.status === "cancelled"
+                    ? 0
+                    : Math.round(agreedPrice * 0.5 * 100) / 100,
                 amountPaid,
-                balance,
+                Math.max(0, agreedPrice - amountPaid),
             ]
         );
     }
-
-    const [finalCountRows] = await db.execute(
-        `SELECT COUNT(*) AS total
-         FROM bookings
-         WHERE store_id = ?`,
-        [storeId]
-    );
-
-    const finalCount = Number(finalCountRows[0].total);
-
-    console.log(
-        `Ensured ${finalCount} bookings (${Math.max(0, finalCount - existingCount)} added).`
-    );
 }
 
-async function ensureOrders(db, storeId, products) {
-    if (products.length < 2) {
-        throw new Error("Cannot create orders because fewer than two products were found.");
+function buildOrderSchedule(startDate, endDate, target, multiplier) {
+    const days = [];
+    let cursor = new Date(startDate.getTime());
+
+    while (cursor <= endDate) {
+        const monthFactor = MONTH_FACTOR[cursor.getUTCMonth() + 1];
+        const dayFactor = DAY_FACTOR[cursor.getUTCDay()];
+
+        const noise = chance(
+            cursor.getUTCFullYear() * 1000 +
+            cursor.getUTCMonth() * 31 +
+            cursor.getUTCDate()
+        );
+
+        let orderCount = Math.floor(
+            0.75 * monthFactor * dayFactor * multiplier +
+            noise * 1.35
+        );
+
+        if (noise < 0.08 && monthFactor < 1) {
+            orderCount = 0;
+        }
+
+        days.push({
+            date: isoDate(cursor),
+            orderCount: Math.max(0, Math.min(4, orderCount)),
+            score: monthFactor * dayFactor + noise,
+            demandFactor: monthFactor * dayFactor,
+        });
+
+        cursor = addDays(cursor, 1);
     }
 
-    const [countRows] = await db.execute(
-        `SELECT COUNT(*) AS total
-         FROM orders
-         WHERE store_id = ?`,
-        [storeId]
-    );
+    let count = days.reduce((total, day) => total + day.orderCount, 0);
 
-    const existingCount = Number(countRows[0].total);
+    const high = [...days].sort((a, b) => b.score - a.score);
 
-    for (let i = existingCount + 1; i <= TARGET_ORDER_COUNT; i++) {
-        const orderId = `ORD-DEMO-${String(i).padStart(5, "0")}`;
-        const firstProduct = pick(products, i);
-        const secondProduct = pick(products, i + 15);
-        const firstQty = randomInt(1, 5, i);
-        const secondQty = randomInt(1, 5, i + 20);
-        const total =
-            Number(firstProduct.price) * firstQty +
-            Number(secondProduct.price) * secondQty;
+    const low = [...days]
+        .filter((day) => day.orderCount > 0)
+        .sort((a, b) => a.score - b.score);
 
-        await db.execute(
-            `INSERT INTO orders
-                (order_id, store_id, customer_name, item, total, order_date)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [
-                orderId,
-                storeId,
-                makeCustomerName(i + 5),
-                `${firstProduct.name}, ${secondProduct.name}`,
-                total,
-                pastDate(randomInt(0, 120, i)),
-            ]
-        );
+    let index = 0;
 
-        await db.execute(
-            `INSERT INTO order_items
-                (order_id, product_name, quantity, unit_price)
-             VALUES (?, ?, ?, ?)`,
-            [orderId, firstProduct.name, firstQty, firstProduct.price]
-        );
+    while (count < target) {
+        const day = high[index % high.length];
 
-        await db.execute(
-            `INSERT INTO order_items
-                (order_id, product_name, quantity, unit_price)
-             VALUES (?, ?, ?, ?)`,
-            [orderId, secondProduct.name, secondQty, secondProduct.price]
-        );
+        if (day.orderCount < 4) {
+            day.orderCount += 1;
+            count += 1;
+        }
+
+        index += 1;
     }
 
-    const [finalCountRows] = await db.execute(
-        `SELECT COUNT(*) AS total
-         FROM orders
-         WHERE store_id = ?`,
-        [storeId]
-    );
+    index = 0;
 
-    const finalCount = Number(finalCountRows[0].total);
+    while (count > target && low.length) {
+        const day = low[index % low.length];
 
-    console.log(
-        `Ensured ${finalCount} orders (${Math.max(0, finalCount - existingCount)} added).`
-    );
+        if (day.orderCount > 0) {
+            day.orderCount -= 1;
+            count -= 1;
+        }
+
+        index += 1;
+    }
+
+    return days;
 }
 
-async function ensureSubscriptionTables(db) {
+function saleLines(
+    saleItems,
+    branchId,
+    orderIndex,
+    demandFactor,
+    quantityMultiplier
+) {
+    const choices = itemsForBranch(saleItems, branchId);
+
+    const featured = choices.slice(0, Math.min(8, choices.length));
+
+    const other = choices.slice(
+        Math.min(8, choices.length),
+        Math.min(25, choices.length)
+    );
+
+    const first = pick(
+        featured.length ? featured : choices,
+        orderIndex
+    );
+
+    const second = pick(
+        other.length ? other : choices,
+        orderIndex * 3 + 7
+    );
+
+    const peakBoost =
+        demandFactor >= 1.4
+            ? 2
+            : demandFactor >= 1.05
+                ? 1
+                : 0;
+
+    return [
+        {
+            ...first,
+            quantity: Math.max(
+                1,
+                Math.round(
+                    (2 + (orderIndex % 3) + peakBoost) *
+                    quantityMultiplier
+                )
+            ),
+        },
+        {
+            ...second,
+            quantity: Math.max(
+                1,
+                Math.round(
+                    (1 +
+                        ((orderIndex + 1) % 3) +
+                        (demandFactor >= 1.25 && orderIndex % 2 === 0
+                            ? 1
+                            : 0)) *
+                    quantityMultiplier
+                )
+            ),
+        },
+    ];
+}
+
+function saleBranch(branches, index) {
+    const roll = chance(index * 41 + 7);
+
+    if (branches.length < 3) {
+        return pick(branches, index);
+    }
+
+    return roll < 0.48
+        ? branches[0]
+        : roll < 0.77
+            ? branches[2]
+            : branches[1];
+}
+
+async function insertOrders(
+    db,
+    {
+        storeId,
+        branches,
+        saleItems,
+        schedule,
+        prefix,
+        startIndex,
+        quantityMultiplier,
+    }
+) {
+    let index = startIndex;
+
+    for (const day of schedule) {
+        for (let number = 0; number < day.orderCount; number += 1) {
+            index += 1;
+
+            const branch = saleBranch(branches, index);
+
+            const lines = saleLines(
+                saleItems,
+                branch.id,
+                index,
+                day.demandFactor,
+                quantityMultiplier
+            );
+
+            const total = lines.reduce(
+                (sum, line) => sum + line.unitPrice * line.quantity,
+                0
+            );
+
+            const orderId = `${prefix}-${String(index).padStart(5, "0")}`;
+
+            await db.execute(
+                `INSERT INTO orders
+                 (
+                    order_id,
+                    store_id,
+                    branch_id,
+                    customer_name,
+                    item,
+                    total,
+                    order_date
+                 )
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    orderId,
+                    storeId,
+                    branch.id,
+                    faker.person.fullName(),
+                    lines
+                        .map(
+                            (line) =>
+                                `${line.productName} x${line.quantity}`
+                        )
+                        .join(", "),
+                    total,
+                    day.date,
+                ]
+            );
+
+            for (const line of lines) {
+                await db.execute(
+                    `INSERT INTO order_items
+                     (
+                        order_id,
+                        product_id,
+                        variant_id,
+                        product_name,
+                        quantity,
+                        unit_price
+                     )
+                     VALUES (?, ?, ?, ?, ?, ?)`,
+                    [
+                        orderId,
+                        line.productId,
+                        line.variantId,
+                        line.productName,
+                        line.quantity,
+                        line.unitPrice,
+                    ]
+                );
+            }
+        }
+    }
+
+    return index;
+}
+
+async function createOrders(db, storeId, branches, saleItems) {
+    const period = completeMonthPeriods();
+
+    const baseline = buildOrderSchedule(
+        period.baselineStart,
+        period.baselineEnd,
+        BASELINE_ORDERS,
+        0.82
+    );
+
+    const current = buildOrderSchedule(
+        period.currentStart,
+        period.currentEnd,
+        CURRENT_YEAR_ORDERS,
+        1
+    );
+
+    const lastIndex = await insertOrders(db, {
+        storeId,
+        branches,
+        saleItems,
+        schedule: baseline,
+        prefix: "POS-DEMO-B",
+        startIndex: 0,
+        quantityMultiplier: 0.82,
+    });
+
+    await insertOrders(db, {
+        storeId,
+        branches,
+        saleItems,
+        schedule: current,
+        prefix: "POS-DEMO-C",
+        startIndex: lastIndex,
+        quantityMultiplier: 1,
+    });
+}
+
+const PLANS = [
+    {
+        code: "starter",
+        name: "Starter",
+        label: "Free",
+        price: 0,
+        inventoryLimit: 50,
+        bookingLimit: 20,
+        staffLimit: 1,
+    },
+    {
+        code: "business",
+        name: "Business",
+        label: "Standard",
+        price: 499,
+        inventoryLimit: 500,
+        bookingLimit: null,
+        staffLimit: 3,
+    },
+    {
+        code: "enterprise",
+        name: "Enterprise",
+        label: "Advanced",
+        price: 1299,
+        inventoryLimit: 2000,
+        bookingLimit: null,
+        staffLimit: 10,
+    },
+];
+
+async function createSubscriptions(db, storeId) {
     await db.execute(`
         CREATE TABLE IF NOT EXISTS subscription_plans (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -935,17 +1265,21 @@ async function ensureSubscriptionTables(db) {
             admin_notes TEXT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                ON UPDATE CURRENT_TIMESTAMP,
-            INDEX idx_subscriptions_store (store_id),
-            INDEX idx_subscriptions_plan (plan_id),
-            INDEX idx_subscriptions_status (status)
+                ON UPDATE CURRENT_TIMESTAMP
         )
     `);
-}
 
-async function ensureSubscriptionPlans(db) {
-    for (const plan of subscriptionPlans) {
-        const [existingPlans] = await db.execute(
+    for (const plan of PLANS) {
+        const features = JSON.stringify([
+            "Inventory",
+            "Bookings",
+            "POS",
+            "Analytics",
+            "Reports",
+            "Forecasting",
+        ]);
+
+        const [existing] = await db.execute(
             `SELECT id
              FROM subscription_plans
              WHERE plan_code = ?
@@ -953,34 +1287,7 @@ async function ensureSubscriptionPlans(db) {
             [plan.code]
         );
 
-        if (existingPlans.length === 0) {
-            await db.execute(
-                `INSERT INTO subscription_plans
-                    (
-                        plan_code,
-                        plan_name,
-                        plan_label,
-                        monthly_price,
-                        inventory_limit,
-                        booking_limit,
-                        staff_limit,
-                        features,
-                        is_active
-                    )
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    plan.code,
-                    plan.name,
-                    plan.label,
-                    plan.price,
-                    plan.inventoryLimit,
-                    plan.bookingLimit,
-                    plan.staffLimit,
-                    JSON.stringify(plan.features),
-                    1,
-                ]
-            );
-        } else {
+        if (existing.length) {
             await db.execute(
                 `UPDATE subscription_plans
                  SET
@@ -1000,154 +1307,148 @@ async function ensureSubscriptionPlans(db) {
                     plan.inventoryLimit,
                     plan.bookingLimit,
                     plan.staffLimit,
-                    JSON.stringify(plan.features),
+                    features,
                     plan.code,
+                ]
+            );
+        } else {
+            await db.execute(
+                `INSERT INTO subscription_plans
+                 (
+                    plan_code,
+                    plan_name,
+                    plan_label,
+                    monthly_price,
+                    inventory_limit,
+                    booking_limit,
+                    staff_limit,
+                    features,
+                    is_active
+                 )
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                [
+                    plan.code,
+                    plan.name,
+                    plan.label,
+                    plan.price,
+                    plan.inventoryLimit,
+                    plan.bookingLimit,
+                    plan.staffLimit,
+                    features,
                 ]
             );
         }
     }
-}
-
-async function ensureSubscriptions(db, storeId) {
-    await ensureSubscriptionTables(db);
-    await ensureSubscriptionPlans(db);
 
     const [planRows] = await db.execute(
         `SELECT id, plan_code, monthly_price
          FROM subscription_plans
-         WHERE plan_code IN ('starter', 'business')`
+         WHERE plan_code IN ('enterprise', 'business')`
     );
 
-    const planByCode = Object.fromEntries(
-        planRows.map((plan) => [plan.plan_code, plan])
+    const plans = Object.fromEntries(
+        planRows.map((row) => [String(row.plan_code), row])
     );
 
-    if (!planByCode.starter || !planByCode.business) {
-        throw new Error("Starter and Business subscription plans are required.");
-    }
-
-    const [activeStarterRows] = await db.execute(
-        `SELECT id
-         FROM subscriptions
-         WHERE store_id = ? AND plan_id = ? AND status = 'active'
-         LIMIT 1`,
-        [storeId, planByCode.starter.id]
+    await db.execute(
+        `INSERT INTO subscriptions
+         (
+            store_id,
+            plan_id,
+            status,
+            amount,
+            billing_period,
+            starts_at,
+            ends_at,
+            admin_notes
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            storeId,
+            plans.enterprise.id,
+            "active",
+            num(plans.enterprise.monthly_price),
+            "monthly",
+            pastDate(10),
+            futureDate(20),
+            "Enterprise plan is active for the full defense demo.",
+        ]
     );
 
-    if (activeStarterRows.length === 0) {
-        await db.execute(
-            `INSERT INTO subscriptions
-                (
-                    store_id,
-                    plan_id,
-                    status,
-                    amount,
-                    billing_period,
-                    starts_at,
-                    ends_at,
-                    admin_notes
-                )
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                storeId,
-                planByCode.starter.id,
-                "active",
-                Number(planByCode.starter.monthly_price),
-                "monthly",
-                pastDate(10),
-                futureDate(20),
-                "Starter plan automatically activated for Demo Party Store.",
-            ]
-        );
-    }
-
-    const [pendingBusinessRows] = await db.execute(
-        `SELECT id
-         FROM subscriptions
-         WHERE store_id = ? AND plan_id = ? AND status = 'pending_verification'
-         LIMIT 1`,
-        [storeId, planByCode.business.id]
-    );
-
-    if (pendingBusinessRows.length === 0) {
-        await db.execute(
-            `INSERT INTO subscriptions
-                (
-                    store_id,
-                    plan_id,
-                    status,
-                    amount,
-                    billing_period,
-                    payment_reference,
-                    payment_date,
-                    proof_path,
-                    admin_notes
-                )
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                storeId,
-                planByCode.business.id,
-                "pending_verification",
-                Number(planByCode.business.monthly_price),
-                "monthly",
-                `GCASH-DEMO-${storeId}-001`,
-                pastDate(1),
-                "uploads/subscriptions/demo-business-payment-proof.png",
-                "Demo Business subscription request awaiting administrator verification.",
-            ]
-        );
-    }
-
-    const [subscriptionCountRows] = await db.execute(
-        `SELECT COUNT(*) AS total
-         FROM subscriptions
-         WHERE store_id = ?`,
-        [storeId]
-    );
-
-    console.log(
-        `Ensured ${subscriptionCountRows[0].total} subscription record(s) for the demo store.`
+    await db.execute(
+        `INSERT INTO subscriptions
+         (
+            store_id,
+            plan_id,
+            status,
+            amount,
+            billing_period,
+            payment_reference,
+            payment_date,
+            proof_path,
+            admin_notes
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            storeId,
+            plans.business.id,
+            "pending_verification",
+            num(plans.business.monthly_price),
+            "monthly",
+            `GCASH-DEMO-${storeId}-001`,
+            pastDate(1),
+            "uploads/subscriptions/demo-business-payment-proof.png",
+            "Demo upgrade request awaiting verification.",
+        ]
     );
 }
 
 async function main() {
-    const db = await mysql.createConnection({
-        host: process.env.DB_HOST,
-        user: process.env.DB_USER,
-        password: process.env.DB_PASSWORD,
-        database: process.env.DB_NAME,
-        port: Number(process.env.DB_PORT || 3306),
-        ssl:
-            process.env.DB_SSL === "true"
-                ? { rejectUnauthorized: false }
-                : undefined,
-    });
+    faker.seed(20260701);
+
+    const db = await mysql.createConnection(dbConfig());
 
     console.log("Connected to database.");
 
     try {
         await db.beginTransaction();
 
+        await resetOldDemoStore(db);
+
         const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
-        const storeId = await getDemoStore(db, passwordHash);
 
-        const branchIds = await ensureBranchesAndUsers(db, storeId, passwordHash);
-        await ensureCategories(db, storeId);
+        const { storeId, branches } =
+            await createStoreBranchesAndUsers(db, passwordHash);
 
-        const products = await ensureProducts(db, storeId, branchIds);
-        const packages = await ensurePackages(db, storeId, branchIds);
+        await createCategories(db, storeId);
 
-        await ensureBookings(db, storeId, branchIds, packages);
-        await ensureOrders(db, storeId, products);
-        await ensureSubscriptions(db, storeId);
+        const { saleItems } = await createProducts(
+            db,
+            storeId,
+            branches
+        );
+
+        const packages = await createPackages(
+            db,
+            storeId,
+            branches,
+            saleItems
+        );
+
+        await createBookings(db, storeId, branches, packages);
+
+        await createOrders(db, storeId, branches, saleItems);
+
+        await createSubscriptions(db, storeId);
 
         await db.commit();
 
-        console.log("");
-        console.log("Demo data setup completed successfully.");
-        console.log(`Demo store ID: ${storeId}`);
+        console.log("\nDefense demo data was created successfully.");
         console.log(`Owner login: ${DEMO_STORE_EMAIL}`);
-        console.log(`Password for all demo accounts: ${DEMO_PASSWORD}`);
+        console.log(`Password: ${DEMO_PASSWORD}`);
+        console.log(
+            "Open /dashboard/analytics and /dashboard/forecasting, then click Refresh."
+        );
     } catch (error) {
         await db.rollback();
         throw error;

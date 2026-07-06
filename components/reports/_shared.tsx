@@ -916,15 +916,17 @@ function normalizeLiveBooking(
         [
             raw.completedAt,
             raw.completed_at,
+            raw.eventDate,
+            raw.event_date,
+            raw.scheduleDate,
+            raw.schedule_date,
+            raw.bookingDate,
+            raw.booking_date,
+            raw.date,
             raw.updatedAt,
             raw.updated_at,
             raw.createdAt,
             raw.created_at,
-            raw.bookingDate,
-            raw.booking_date,
-            raw.date,
-            raw.eventDate,
-            raw.event_date,
         ]
             .map((value) => toReportDateValue(value))
             .find(Boolean) || "";
@@ -2829,21 +2831,44 @@ export function ReportsWorkspace({
             assignedBranch,
         });
 
+        if (scopedSalesBranchId) {
+            query.set("branch_id", scopedSalesBranchId);
+        }
+
+        const token = getStoredSessionValue(["token"]);
+
+        if (!token) {
+            setReport(null);
+            setLoading(false);
+            return;
+        }
+
         try {
             setLoading(true);
 
             const response = await fetch(`/api/reports?${query.toString()}`, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
                 cache: "no-store",
             });
             const payload = await response.json();
 
             setReport(response.ok && payload?.success ? payload.data : null);
-        } catch {
+        } catch (error) {
+            console.warn("Reports API loading failed:", error);
             setReport(null);
         } finally {
             setLoading(false);
         }
-    }, [assignedBranch, branch, endDate, role, startDate]);
+    }, [
+        assignedBranch,
+        branch,
+        endDate,
+        role,
+        scopedSalesBranchId,
+        startDate,
+    ]);
 
     const loadLiveBranches = useCallback(async () => {
         const token = getStoredSessionValue(["token"]);
@@ -2908,7 +2933,7 @@ export function ReportsWorkspace({
 
         if (!token) {
             setLiveSalesState({
-                ready: true,
+                ready: false,
                 items: [],
             });
             return;
@@ -2988,7 +3013,7 @@ export function ReportsWorkspace({
             // Keep the report truthful when live orders cannot be loaded.
             // Do not substitute unrelated fallback/sample sales records.
             setLiveSalesState({
-                ready: true,
+                ready: false,
                 items: [],
             });
         }
@@ -3006,7 +3031,7 @@ export function ReportsWorkspace({
 
         if (!token) {
             setLiveBookingsState({
-                ready: true,
+                ready: false,
                 items: [],
             });
             return;
@@ -3086,7 +3111,7 @@ export function ReportsWorkspace({
             // Keep booking revenue truthful. Do not substitute unrelated
             // fallback/sample booking records when live data is unavailable.
             setLiveBookingsState({
-                ready: true,
+                ready: false,
                 items: [],
             });
         }
@@ -3104,7 +3129,7 @@ export function ReportsWorkspace({
 
         if (!token) {
             setLiveInventoryState({
-                ready: true,
+                ready: false,
                 items: [],
             });
             return;
@@ -3177,7 +3202,7 @@ export function ReportsWorkspace({
             // Do not show sample stock when the live inventory request fails.
             // An empty list is more truthful than unrelated demo items.
             setLiveInventoryState({
-                ready: true,
+                ready: false,
                 items: [],
             });
         }
@@ -3283,22 +3308,16 @@ export function ReportsWorkspace({
             return liveInventoryState.items;
         }
 
-        return report?.inventoryList?.length
-            ? report.inventoryList
-            : fallbackInventory(activeBranch);
+        return report?.inventoryList ?? [];
     }, [
-        activeBranch,
         liveInventoryState.items,
         liveInventoryState.ready,
         report?.inventoryList,
     ]);
 
     const restocks = useMemo(
-        () =>
-            report?.restockHistory?.length
-                ? report.restockHistory
-                : fallbackRestocks(activeBranch),
-        [activeBranch, report?.restockHistory]
+        () => report?.restockHistory ?? [],
+        [report?.restockHistory]
     );
 
     const bookings = useMemo(() => {
@@ -3306,12 +3325,7 @@ export function ReportsWorkspace({
             return liveBookingsState.items;
         }
 
-        const sourceBookings =
-            report?.bookingList?.length
-                ? report.bookingList
-                : fallbackBookings(activeBranch);
-
-        return sourceBookings.filter((booking) =>
+        return (report?.bookingList ?? []).filter((booking) =>
             isDateInSelectedRange(
                 toReportDateValue(booking.date),
                 startDate,
@@ -3319,7 +3333,6 @@ export function ReportsWorkspace({
             )
         );
     }, [
-        activeBranch,
         endDate,
         liveBookingsState.items,
         liveBookingsState.ready,
@@ -3328,8 +3341,11 @@ export function ReportsWorkspace({
     ]);
 
     const orderRevenueRecords = useMemo(
-        () => liveSalesState.items,
-        [liveSalesState.items]
+        () =>
+            liveSalesState.ready
+                ? liveSalesState.items
+                : report?.salesList ?? [],
+        [liveSalesState.items, liveSalesState.ready, report?.salesList]
     );
 
     /*
@@ -3354,25 +3370,18 @@ export function ReportsWorkspace({
     );
 
     const forecasts = useMemo(
-        () =>
-            report?.forecasting?.length ? report.forecasting : fallbackForecasts(),
+        () => report?.forecasting ?? [],
         [report?.forecasting]
     );
 
     const seasons = useMemo(
-        () =>
-            report?.seasonalInsights?.length
-                ? report.seasonalInsights
-                : fallbackSeasons(),
+        () => report?.seasonalInsights ?? [],
         [report?.seasonalInsights]
     );
 
     const staffActivities = useMemo(
-        () =>
-            report?.staffActivities?.length
-                ? report.staffActivities
-                : fallbackStaffActivities(activeBranch),
-        [activeBranch, report?.staffActivities]
+        () => report?.staffActivities ?? [],
+        [report?.staffActivities]
     );
 
     const bookingStaffActions = useMemo(

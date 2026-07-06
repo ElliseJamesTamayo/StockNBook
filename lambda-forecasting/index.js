@@ -8,6 +8,7 @@ const {
     buildSeasonalAnalysis,
     buildBookingForecast,
 } = require("./forecastingEngine");
+
 const {
     ensureBranchBelongsToStore,
     getWeekWindows,
@@ -23,13 +24,18 @@ const {
 } = require("./forecastingRepository");
 
 /*
-  IMPORTANT:
-  Copy the SAME JWT_SECRET and dbConfig values from your working
-  lambda-pos/index.js file into the two placeholders below.
+  Configure these in AWS Lambda Environment Variables:
 
-  Do not use a different JWT secret. It must match your login/auth Lambda.
+  DB_HOST
+  DB_PORT
+  DB_USER
+  DB_PASSWORD
+  DB_NAME
+  DB_SSL
+  JWT_SECRET
 */
 const JWT_SECRET = process.env.JWT_SECRET || "stocknbook-secret-key";
+
 const dbConfig = {
     host: "stocknbook-db.clyuqe48evd0.ap-southeast-1.rds.amazonaws.com",
     user: "admin",
@@ -67,133 +73,10 @@ function serverError(headers, error) {
 
 function toPositiveInteger(value) {
     const number = Number(value);
-    return Number.isInteger(number) && number > 0 ? number : null;
-}
 
-function parseMonthInput(value) {
-    const raw = String(value ?? "").trim();
-
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(raw)) {
-        return null;
-    }
-
-    const [year, month] = raw.split("-").map(Number);
-
-    if (!Number.isInteger(year) || !Number.isInteger(month)) {
-        return null;
-    }
-
-    return {
-        year,
-        month,
-        key: raw,
-    };
-}
-
-function toUtcDateKey(date) {
-    return date.toISOString().slice(0, 10);
-}
-
-function getCurrentMonthKey() {
-    const today = new Date();
-
-    return `${today.getUTCFullYear()}-${String(
-        today.getUTCMonth() + 1
-    ).padStart(2, "0")}`;
-}
-
-function getLastDayOfMonth(year, month) {
-    return new Date(Date.UTC(year, month, 0));
-}
-
-function countMonthsInclusive(startMonth, endMonth) {
-    return (
-        (endMonth.year - startMonth.year) * 12 +
-        (endMonth.month - startMonth.month) +
-        1
-    );
-}
-
-/*
-  Accepts:
-  {
-    seasonalStartMonth: "YYYY-MM",
-    seasonalEndMonth: "YYYY-MM"
-  }
-
-  This keeps the date filter limited to full calendar months. It prevents
-  accidental future periods and protects the Lambda from very large requests.
-*/
-function resolveSeasonalDateRange(body = {}) {
-    const rawStart =
-        body.seasonalStartMonth ??
-        body.seasonal_start_month ??
-        body.startMonth ??
-        body.start_month;
-
-    const rawEnd =
-        body.seasonalEndMonth ??
-        body.seasonal_end_month ??
-        body.endMonth ??
-        body.end_month;
-
-    if (!rawStart && !rawEnd) {
-        const range = getMonthRange(12);
-
-        return {
-            startDate: range.startDate,
-            endDate: range.endDate,
-            historyMonths: 12,
-        };
-    }
-
-    const startMonth = parseMonthInput(rawStart);
-    const endMonth = parseMonthInput(rawEnd);
-
-    if (!startMonth || !endMonth) {
-        return {
-            error:
-                "seasonalStartMonth and seasonalEndMonth must use YYYY-MM format.",
-        };
-    }
-
-    if (startMonth.key > endMonth.key) {
-        return {
-            error:
-                "seasonalStartMonth must not be later than seasonalEndMonth.",
-        };
-    }
-
-    const currentMonthKey = getCurrentMonthKey();
-
-    if (endMonth.key > currentMonthKey) {
-        return {
-            error:
-                "The selected seasonal end month cannot be later than the current month.",
-        };
-    }
-
-    const historyMonths = countMonthsInclusive(startMonth, endMonth);
-
-    if (historyMonths < 1 || historyMonths > 60) {
-        return {
-            error:
-                "Choose a seasonal sales period between 1 and 60 calendar months.",
-        };
-    }
-
-    const today = new Date();
-    const todayKey = toUtcDateKey(today);
-    const endDate =
-        endMonth.key === currentMonthKey
-            ? todayKey
-            : toUtcDateKey(getLastDayOfMonth(endMonth.year, endMonth.month));
-
-    return {
-        startDate: `${startMonth.key}-01`,
-        endDate,
-        historyMonths,
-    };
+    return Number.isInteger(number) && number > 0
+        ? number
+        : null;
 }
 
 function getTokenFromHeader(event) {
@@ -205,64 +88,264 @@ function getTokenFromHeader(event) {
 }
 
 function getRole(decoded) {
-    return String(decoded?.role || "").trim().toLowerCase();
-}
-
-function getBranchIdFromToken(decoded) {
-    return toPositiveInteger(decoded?.branch_id);
-}
-
-function getStoreIdFromToken(decoded) {
-    return toPositiveInteger(decoded?.store_id);
-}
-
-function normalizeAction(action) {
-    if (action === "get_seasonal_analysis") {
-        return "get_seasonal_forecast";
-    }
-
-    return action;
+    return String(decoded?.role || "")
+        .trim()
+        .toLowerCase();
 }
 
 function getScopeFromToken(decoded, body, headers) {
-    const storeId = getStoreIdFromToken(decoded);
-    const tokenBranchId = getBranchIdFromToken(decoded);
+    const storeId = toPositiveInteger(decoded?.store_id);
     const role = getRole(decoded);
-    const isBranchUser = role === "manager" || role === "staff";
+    const tokenBranchId = toPositiveInteger(decoded?.branch_id);
     const requestedBranchId = toPositiveInteger(body.branch_id);
+
+    const isBranchUser =
+        role === "manager" ||
+        role === "staff";
 
     if (!storeId) {
         return {
-            error: unauthorized(headers, "Invalid store in token."),
+            error: unauthorized(
+                headers,
+                "Invalid store in token."
+            ),
         };
     }
 
-    let selectedBranchId = null;
-
-    if (isBranchUser) {
-        if (!tokenBranchId) {
-            return {
-                error: badRequest(
-                    headers,
-                    "Missing branch_id in token for this user."
-                ),
-            };
-        }
-
-        selectedBranchId = tokenBranchId;
-    } else if (role === "owner" && requestedBranchId) {
-        selectedBranchId = requestedBranchId;
+    if (isBranchUser && !tokenBranchId) {
+        return {
+            error: badRequest(
+                headers,
+                "Missing branch_id in token for this user."
+            ),
+        };
     }
 
     return {
         storeId,
         role,
-        selectedBranchId,
+        selectedBranchId: isBranchUser
+            ? tokenBranchId
+            : role === "owner"
+                ? requestedBranchId
+                : null,
     };
 }
 
-function alertSortPriority(item) {
-    const alertPriority = {
+function normalizeAction(action) {
+    return action === "get_seasonal_analysis"
+        ? "get_seasonal_forecast"
+        : action;
+}
+
+function parseMonth(value) {
+    const key = String(value || "").trim();
+
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(key)) {
+        return null;
+    }
+
+    const [year, month] = key.split("-").map(Number);
+
+    return {
+        key,
+        year,
+        month,
+    };
+}
+
+function toDateKey(date) {
+    return date.toISOString().slice(0, 10);
+}
+
+function lastDayOfMonth(year, month) {
+    return new Date(Date.UTC(year, month, 0));
+}
+
+function resolveSeasonalDateRange(body) {
+    const start = parseMonth(
+        body.seasonalStartMonth ??
+        body.seasonal_start_month ??
+        body.startMonth
+    );
+
+    const end = parseMonth(
+        body.seasonalEndMonth ??
+        body.seasonal_end_month ??
+        body.endMonth
+    );
+
+    if (!start && !end) {
+        const range = getMonthRange(12);
+
+        return {
+            ...range,
+            historyMonths: 12,
+        };
+    }
+
+    if (!start || !end || start.key > end.key) {
+        return {
+            error:
+                "Choose valid start and end months using YYYY-MM format.",
+        };
+    }
+
+    const historyMonths =
+        (end.year - start.year) * 12 +
+        (end.month - start.month) +
+        1;
+
+    if (historyMonths < 1 || historyMonths > 60) {
+        return {
+            error:
+                "Choose a seasonal sales period between 1 and 60 months.",
+        };
+    }
+
+    const today = new Date();
+
+    const currentMonth = `${today.getUTCFullYear()}-${String(
+    today.getUTCMonth() + 1
+).padStart(2, "0")}`;
+
+    if (end.key > currentMonth) {
+        return {
+            error:
+                "The selected seasonal end month cannot be in the future.",
+        };
+    }
+
+    return {
+        startDate: `${start.key}-01`,
+        endDate:
+            end.key === currentMonth
+                ? toDateKey(today)
+                : toDateKey(lastDayOfMonth(end.year, end.month)),
+        historyMonths,
+    };
+}
+
+/*
+  Creates a complete month-by-month timeline.
+
+  Missing months become zero instead of being removed, so the Forecasting
+  graph always displays a real 12-month sequence.
+*/
+function buildMonthlyDemandHistory(
+    monthlyRows = [],
+    startDate,
+    endDate
+) {
+    const savedRows = new Map();
+
+    monthlyRows.forEach((row) => {
+        const monthKey = String(row.monthKey || "");
+
+        if (!/^\d{4}-\d{2}$/.test(monthKey)) {
+            return;
+        }
+
+        savedRows.set(monthKey, {
+            totalUnits: Math.max(
+                0,
+                Number(row.totalUnits || 0)
+            ),
+            orderCount: Math.max(
+                0,
+                Number(row.orderCount || 0)
+            ),
+        });
+    });
+
+    const start = parseMonth(
+        String(startDate || "").slice(0, 7)
+    );
+
+    const end = parseMonth(
+        String(endDate || "").slice(0, 7)
+    );
+
+    if (!start || !end) {
+        return [];
+    }
+
+    const cursor = new Date(
+        Date.UTC(start.year, start.month - 1, 1)
+    );
+
+    const lastMonth = new Date(
+        Date.UTC(end.year, end.month - 1, 1)
+    );
+
+    const history = [];
+
+    while (cursor <= lastMonth) {
+        const monthKey = `${cursor.getUTCFullYear()}-${String(
+    cursor.getUTCMonth() + 1
+).padStart(2, "0")}`;
+
+        const row = savedRows.get(monthKey) || {
+            totalUnits: 0,
+            orderCount: 0,
+        };
+
+        history.push({
+            monthKey,
+            label: new Intl.DateTimeFormat("en-US", {
+                month: "short",
+                year: "2-digit",
+                timeZone: "UTC",
+            }).format(cursor),
+            totalUnits: row.totalUnits,
+            orderCount: row.orderCount,
+        });
+
+        cursor.setUTCMonth(
+            cursor.getUTCMonth() + 1
+        );
+    }
+
+    return history;
+}
+
+function buildBookingAllocationMap(bookingForecast) {
+    const allocationMap = new Map();
+
+    for (const allocation of bookingForecast?.allocatedInventory || []) {
+        const productId = Number(
+            allocation.productId || 0
+        );
+
+        if (!productId) {
+            continue;
+        }
+
+        const variantId =
+            Number(allocation.variantId || 0) || null;
+
+        const key = `${productId}:${variantId || "product"}`;
+
+        allocationMap.set(
+            key,
+            Number(allocationMap.get(key) || 0) +
+                Number(allocation.quantity || 0)
+        );
+    }
+
+    return allocationMap;
+}
+
+function alertPriority(item) {
+    const timeAlert = String(
+        item.timeAlert || "NONE"
+    );
+
+    const status = String(
+        item.status || "STABLE"
+    );
+
+    const timeRank = {
         OUT_OF_STOCK: 0,
         MAY_RUN_OUT_WITHIN_3_DAYS: 1,
         MAY_RUN_OUT_WITHIN_7_DAYS: 2,
@@ -270,62 +353,36 @@ function alertSortPriority(item) {
         NONE: 4,
     };
 
-    const statusPriority = {
+    const statusRank = {
         LOW: 0,
         RISK: 1,
         STABLE: 2,
     };
 
-    const timeAlert = String(item.timeAlert || "NONE");
-    const status = String(item.status || "STABLE");
-
     return (
-        (alertPriority[timeAlert] ?? 5) * 10 +
-        (statusPriority[status] ?? 3)
+        (timeRank[timeAlert] ?? 5) * 10 +
+        (statusRank[status] ?? 3)
     );
 }
 
-
-function buildBookingAllocationMap(bookingForecast) {
-    const allocationMap = new Map();
-
-    const allocations = Array.isArray(bookingForecast?.allocatedInventory)
-        ? bookingForecast.allocatedInventory
-        : [];
-
-    allocations.forEach((allocation) => {
-        const productId = Number(allocation.productId || 0);
-
-        if (!productId) {
-            return;
-        }
-
-        const variantId = Number(allocation.variantId || 0) || null;
-        const key = `${productId}:${variantId || "product"}`;
-        const current = Number(allocationMap.get(key) || 0);
-
-        allocationMap.set(key, current + Number(allocation.quantity || 0));
-    });
-
-    return allocationMap;
-}
-
 async function buildInventoryForecastResponse({
-                                                  connection,
-                                                  storeId,
-                                                  role,
-                                                  selectedBranchId,
-                                              }) {
+    connection,
+    storeId,
+    role,
+    selectedBranchId,
+}) {
     const historyWeeks = 12;
     const historyMonths = 12;
     const periodDays = 30;
     const leadTimeDays = 3;
+
     const weekWindows = getWeekWindows(historyWeeks);
     const monthRange = getMonthRange(historyMonths);
     const bookingRange = getUpcomingBookingRange(periodDays);
 
     const historyStartDate = weekWindows[0].startDate;
-    const historyEndDate = weekWindows[weekWindows.length - 1].endDate;
+    const historyEndDate =
+        weekWindows[weekWindows.length - 1].endDate;
 
     const [
         inventoryItems,
@@ -337,18 +394,21 @@ async function buildInventoryForecastResponse({
             storeId,
             branchId: selectedBranchId,
         }),
+
         getHistoricalSales(connection, {
             storeId,
             branchId: selectedBranchId,
             startDate: historyStartDate,
             endDate: historyEndDate,
         }),
+
         getItemMonthlySalesSummary(connection, {
             storeId,
             branchId: selectedBranchId,
             startDate: monthRange.startDate,
             endDate: monthRange.endDate,
         }),
+
         getUpcomingBookings(connection, {
             storeId,
             branchId: selectedBranchId,
@@ -357,11 +417,10 @@ async function buildInventoryForecastResponse({
         }),
     ]);
 
-    const bookingForecast = buildBookingForecast(upcomingBookings, {
-        periodDays,
-    });
-
-    const bookingAllocationMap = buildBookingAllocationMap(bookingForecast);
+    const bookingForecast = buildBookingForecast(
+        upcomingBookings,
+        { periodDays }
+    );
 
     const weeklyDemandMap = buildWeeklyDemandMap(
         inventoryItems,
@@ -369,154 +428,120 @@ async function buildInventoryForecastResponse({
         weekWindows
     );
 
-    const itemMonthlySalesMap = buildItemMonthlySalesMap(
+    const monthlySalesMap = buildItemMonthlySalesMap(
         inventoryItems,
         itemMonthlySales
     );
 
-    const rawItems = inventoryItems
-        .map((item) => {
-            const weeklyDemand =
-                weeklyDemandMap.get(item.id) ||
-                Array.from({ length: historyWeeks }, () => 0);
+    const bookingAllocationMap = buildBookingAllocationMap(
+        bookingForecast
+    );
 
-            const allocatedQuantity = Number(
-                bookingAllocationMap.get(item.id) || 0
-            );
+    const rawItems = inventoryItems.map((item) => {
+        const weeklyDemand =
+            weeklyDemandMap.get(item.id) ||
+            Array(historyWeeks).fill(0);
 
-            const forecast = buildInventoryForecast({
-                weeklyDemand,
-                onHandQuantity: item.onHandQuantity,
-                allocatedQuantity,
-                lowStockThreshold: item.lowStockThreshold,
-                safetyStock: item.lowStockThreshold,
-                periodDays,
-                leadTimeDays,
-            });
+        const itemMonthlyHistory =
+            monthlySalesMap.get(item.id) || [];
 
-            return {
-                id: item.id,
-                productId: item.productId,
-                variantId: item.variantId,
-                productName: item.productName,
-                variantName: item.variantName,
-                itemName: item.itemName,
-                category: item.category,
-                branchId: item.branchId,
-                branchName: item.branchName,
-                isVariant: item.isVariant,
+        const monthlyDemand = buildMonthlyDemandHistory(
+            itemMonthlyHistory,
+            monthRange.startDate,
+            monthRange.endDate
+        );
 
-                currentStock: forecast.onHandQuantity,
-                onHandQuantity: forecast.onHandQuantity,
-                allocatedQuantity: forecast.allocatedQuantity,
-                availableQuantity: forecast.availableQuantity,
-                lowStockThreshold: item.lowStockThreshold,
+        const allocatedQuantity = Number(
+            bookingAllocationMap.get(item.id) || 0
+        );
 
-                historyWeeks,
-                weeklyDemand,
-
-                weeklyForecast: forecast.weeklyForecast,
-                baseWeeklyForecast: forecast.baseWeeklyForecast,
-                forecastedDemand: forecast.forecastedDemand,
-                suggestedRestock: forecast.suggestedRestock,
-                status: forecast.status,
-
-                recentFourWeekDemand: forecast.recentFourWeekDemand,
-                previousFourWeekDemand: forecast.previousFourWeekDemand,
-                growthPercent: forecast.growthPercent,
-                growthFactor: forecast.growthFactor,
-                growthTrend: forecast.growthTrend,
-
-                totalUnitsSold: forecast.totalUnitsSold,
-                activeSalesWeeks: forecast.activeSalesWeeks,
-                averageWeeklyDemand: forecast.averageWeeklyDemand,
-                movementClass: forecast.movementClass,
-
-                dailyDemand: forecast.dailyDemand,
-                daysUntilStockout: forecast.daysUntilStockout,
-                reorderPoint: forecast.reorderPoint,
-                reorderNow: forecast.reorderNow,
-                leadTimeDays: forecast.leadTimeDays,
-                timeAlert: forecast.timeAlert,
-                alertSeverity: forecast.alertSeverity,
-
-                seasonality: buildItemSeasonality(
-                    itemMonthlySalesMap.get(item.id) || [],
-                    {
-                        currentMonthNumber: new Date().getUTCMonth() + 1,
-                        minimumHistoryMonths: 6,
-                    }
-                ),
-            };
+        const forecast = buildInventoryForecast({
+            weeklyDemand,
+            onHandQuantity: item.onHandQuantity,
+            allocatedQuantity,
+            lowStockThreshold: item.lowStockThreshold,
+            safetyStock: item.lowStockThreshold,
+            periodDays,
+            leadTimeDays,
         });
 
-    const items = assignDemandLevels(rawItems)
-        .sort((first, second) => {
-            const priorityDifference =
-                alertSortPriority(first) - alertSortPriority(second);
+        return {
+            ...item,
 
-            if (priorityDifference !== 0) {
-                return priorityDifference;
-            }
+            currentStock: forecast.onHandQuantity,
+            onHandQuantity: forecast.onHandQuantity,
+            allocatedQuantity: forecast.allocatedQuantity,
+            availableQuantity: forecast.availableQuantity,
 
-            return (
-                Number(second.suggestedRestock || 0) -
+            historyWeeks,
+            weeklyDemand,
+            monthlyDemand,
+
+            weeklyForecast: forecast.weeklyForecast,
+            baseWeeklyForecast: forecast.baseWeeklyForecast,
+            forecastedDemand: forecast.forecastedDemand,
+            suggestedRestock: forecast.suggestedRestock,
+            status: forecast.status,
+
+            recentFourWeekDemand:
+                forecast.recentFourWeekDemand,
+
+            previousFourWeekDemand:
+                forecast.previousFourWeekDemand,
+
+            growthPercent: forecast.growthPercent,
+            growthFactor: forecast.growthFactor,
+            growthTrend: forecast.growthTrend,
+
+            totalUnitsSold: forecast.totalUnitsSold,
+            activeSalesWeeks: forecast.activeSalesWeeks,
+
+            averageWeeklyDemand:
+                forecast.averageWeeklyDemand,
+
+            movementClass: forecast.movementClass,
+            dailyDemand: forecast.dailyDemand,
+
+            daysUntilStockout:
+                forecast.daysUntilStockout,
+
+            reorderPoint: forecast.reorderPoint,
+            reorderNow: forecast.reorderNow,
+            leadTimeDays: forecast.leadTimeDays,
+
+            timeAlert: forecast.timeAlert,
+            alertSeverity: forecast.alertSeverity,
+
+            seasonality: buildItemSeasonality(
+                itemMonthlyHistory,
+                {
+                    currentMonthNumber:
+                        new Date().getUTCMonth() + 1,
+                    minimumHistoryMonths: 6,
+                }
+            ),
+        };
+    });
+
+    const items = assignDemandLevels(rawItems).sort((first, second) => {
+        const alertDifference =
+            alertPriority(first) -
+            alertPriority(second);
+
+        if (alertDifference !== 0) {
+            return alertDifference;
+        }
+
+        return (
+            Number(second.suggestedRestock || 0) -
                 Number(first.suggestedRestock || 0) ||
-                Number(second.forecastedDemand || 0) -
+            Number(second.forecastedDemand || 0) -
                 Number(first.forecastedDemand || 0)
-            );
-        });
+        );
+    });
 
-    const lowItems = items.filter((item) => item.status === "LOW");
-    const riskItems = items.filter((item) => item.status === "RISK");
-    const restockItems = items.filter(
-        (item) => item.status === "LOW" || item.status === "RISK"
-    );
-
-    const criticalStockoutAlerts = items.filter(
-        (item) =>
-            item.timeAlert === "OUT_OF_STOCK" ||
-            item.timeAlert === "MAY_RUN_OUT_WITHIN_3_DAYS"
-    );
-
-    const stockoutWithin7Days = items.filter(
-        (item) => item.timeAlert === "MAY_RUN_OUT_WITHIN_7_DAYS"
-    );
-
-    const reorderNowItems = items.filter((item) => item.reorderNow);
-
-    const fastMovingItems = items.filter(
-        (item) => item.movementClass === "FAST_MOVING"
-    );
-
-    const slowMovingItems = items.filter(
-        (item) => item.movementClass === "SLOW_MOVING"
-    );
-
-    const highDemandItems = items.filter(
-        (item) => item.demandLevel === "HIGH"
-    );
-
-    const growingDemandItems = items.filter(
-        (item) =>
-            item.growthTrend === "GROWING" ||
-            item.growthTrend === "NEW_DEMAND"
-    );
-
-    const peakSeasonItems = items.filter(
-        (item) => item.seasonality?.status === "PEAK_SEASON"
-    );
-
-    const limitedSeasonalHistoryItems = items.filter(
-        (item) =>
-            item.seasonality?.status === "LIMITED_HISTORY" ||
-            item.seasonality?.status === "NO_HISTORY"
-    );
-
-    const projectedDemand = items.reduce(
-        (total, item) => total + Number(item.forecastedDemand || 0),
-        0
-    );
+    const count = (predicate) =>
+        items.filter(predicate).length;
 
     return {
         success: true,
@@ -536,48 +561,67 @@ async function buildInventoryForecastResponse({
         },
 
         summary: {
-            projectedDemand,
-            expectedBookings: bookingForecast.expectedBookings,
-            confirmedBookings: bookingForecast.confirmedBookings,
-            preparingBookings: bookingForecast.preparingBookings,
-            restockAlerts: restockItems.length,
-            lowStockItems: lowItems.length,
-            riskItems: riskItems.length,
+            projectedDemand: items.reduce(
+                (total, item) =>
+                    total + Number(item.forecastedDemand || 0),
+                0
+            ),
+
+            expectedBookings:
+                bookingForecast.expectedBookings,
+
+            confirmedBookings:
+                bookingForecast.confirmedBookings,
+
+            preparingBookings:
+                bookingForecast.preparingBookings,
+
             trackedItems: items.length,
 
-            criticalStockoutAlerts: criticalStockoutAlerts.length,
-            stockoutWithin7Days: stockoutWithin7Days.length,
-            reorderNowItems: reorderNowItems.length,
-            fastMovingItems: fastMovingItems.length,
-            slowMovingItems: slowMovingItems.length,
-            highDemandItems: highDemandItems.length,
-            growingDemandItems: growingDemandItems.length,
-            peakSeasonItems: peakSeasonItems.length,
-            limitedSeasonalHistoryItems: limitedSeasonalHistoryItems.length,
+            restockAlerts: count(
+                (item) =>
+                    item.status === "LOW" ||
+                    item.status === "RISK"
+            ),
+
+            lowStockItems: count(
+                (item) => item.status === "LOW"
+            ),
+
+            riskItems: count(
+                (item) => item.status === "RISK"
+            ),
+
+            highDemandItems: count(
+                (item) => item.demandLevel === "HIGH"
+            ),
+
+            growingDemandItems: count(
+                (item) =>
+                    item.growthTrend === "GROWING" ||
+                    item.growthTrend === "NEW_DEMAND"
+            ),
+
+            peakSeasonItems: count(
+                (item) =>
+                    item.seasonality?.status === "PEAK_SEASON"
+            ),
 
             bookingAllocatedUnits:
-            bookingForecast.allocationSummary.allocatedUnits,
+                bookingForecast.allocationSummary
+                    .allocatedUnits,
+
             bookingsWithoutAllocation:
-            bookingForecast.allocationSummary.bookingsWithoutAllocation,
+                bookingForecast.allocationSummary
+                    .bookingsWithoutAllocation,
         },
 
         notes: {
             dataSource:
-                "Completed POS sales, current inventory, and confirmed or preparing bookings scheduled in the next 30 days.",
-            demandLevel:
-                "High, Moderate, and Low demand levels compare each item's projected 30-day demand with other items in the same branch. Stock quantity does not determine demand level.",
-            seasonality:
-                "Item-level seasonality compares the current calendar month with the item's own 12-month POS history. Signals based on one year are labelled preliminary.",
-            growthCalculation:
-                "Latest 4 weeks compared with the previous 4 weeks. The growth adjustment is limited from 0.70 to 1.30.",
-            movementClassification:
-                "Fast-moving: 5+ active sales weeks; Regular-moving: 3–4; Slow-moving: 1–2; No movement: 0.",
-            timeBasedAlerts:
-                "Uses the projected daily demand to estimate stockout within 3 or 7 days.",
-            bookingForecast:
-                "Counts confirmed and preparing bookings scheduled within the next 30 days. Package inclusion allocations are subtracted only when the saved package JSON contains product IDs.",
-            allocatedQuantity:
-                "Reserved quantity from matching upcoming booking package inclusions.",
+                "Completed POS sales, inventory, and upcoming confirmed/preparing bookings.",
+
+            monthlyDemand:
+                "Each monthlyDemand point is one complete calendar month of completed POS item quantity.",
         },
 
         bookingSummary: bookingForecast,
@@ -586,94 +630,106 @@ async function buildInventoryForecastResponse({
 }
 
 async function buildSeasonalForecastResponse({
-                                                 connection,
-                                                 storeId,
-                                                 role,
-                                                 selectedBranchId,
-                                                 seasonalRange,
-                                             }) {
-    const monthRange = seasonalRange || getMonthRange(12);
-    const historyMonths = Number(monthRange.historyMonths || 12);
+    connection,
+    storeId,
+    role,
+    selectedBranchId,
+    seasonalRange,
+}) {
+    const range =
+        seasonalRange || {
+            ...getMonthRange(12),
+            historyMonths: 12,
+        };
 
-    const monthlySales = await getMonthlySalesSummary(connection, {
-        storeId,
-        branchId: selectedBranchId,
-        startDate: monthRange.startDate,
-        endDate: monthRange.endDate,
-    });
-
-    const seasonal = buildSeasonalAnalysis(monthlySales, 12);
+    const monthlySales = await getMonthlySalesSummary(
+        connection,
+        {
+            storeId,
+            branchId: selectedBranchId,
+            startDate: range.startDate,
+            endDate: range.endDate,
+        }
+    );
 
     return {
         success: true,
         action: "get_seasonal_forecast",
         generatedAt: new Date().toISOString(),
+
         scope: {
             storeId,
             branchId: selectedBranchId,
             role,
-            historyMonths,
-            historyStartDate: monthRange.startDate,
-            historyEndDate: monthRange.endDate,
+            historyMonths: Number(
+                range.historyMonths || 12
+            ),
+            historyStartDate: range.startDate,
+            historyEndDate: range.endDate,
         },
+
         notes: {
             dataSource: "Completed POS sales only",
-            requirement:
-                "At least 12 distinct months of completed POS history are required before the system labels seasonal results as ready. The selected date range may include up to 60 calendar months.",
         },
-        seasonal,
+
+        seasonal: buildSeasonalAnalysis(
+            monthlySales,
+            12
+        ),
     };
 }
 
 async function buildBookingForecastResponse({
-                                                connection,
-                                                storeId,
-                                                role,
-                                                selectedBranchId,
-                                            }) {
+    connection,
+    storeId,
+    role,
+    selectedBranchId,
+}) {
     const periodDays = 30;
-    const bookingRange = getUpcomingBookingRange(periodDays);
 
-    const upcomingBookings = await getUpcomingBookings(connection, {
-        storeId,
-        branchId: selectedBranchId,
-        startDate: bookingRange.startDate,
-        endDate: bookingRange.endDate,
-    });
+    const range = getUpcomingBookingRange(
+        periodDays
+    );
 
-    const booking = buildBookingForecast(upcomingBookings, {
-        periodDays,
-    });
+    const bookings = await getUpcomingBookings(
+        connection,
+        {
+            storeId,
+            branchId: selectedBranchId,
+            startDate: range.startDate,
+            endDate: range.endDate,
+        }
+    );
 
     return {
         success: true,
         action: "get_booking_forecast",
         generatedAt: new Date().toISOString(),
+
         scope: {
             storeId,
             branchId: selectedBranchId,
             role,
             periodDays,
-            startDate: bookingRange.startDate,
-            endDate: bookingRange.endDate,
+            startDate: range.startDate,
+            endDate: range.endDate,
         },
-        notes: {
-            dataSource:
-                "Confirmed and preparing booking records scheduled in the next 30 days.",
-            includedStatuses: ["Confirmed", "Preparing", "Approved"],
-            allocationRule:
-                "Inventory allocation is shown only for package inclusions with saved product IDs. Custom or legacy package rows without product IDs remain visible but are not subtracted from stock.",
-        },
-        booking,
+
+        booking: buildBookingForecast(bookings, {
+            periodDays,
+        }),
     };
 }
-
 
 exports.handler = async (event) => {
     const headers = {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers":
+            "Content-Type, Authorization",
+
+        "Access-Control-Allow-Methods":
+            "GET, POST, OPTIONS",
+
         "Content-Type": "application/json",
     };
 
@@ -689,12 +745,15 @@ exports.handler = async (event) => {
         };
     }
 
-    let body = {};
+    let body;
 
     try {
         body = JSON.parse(event.body || "{}");
     } catch {
-        return badRequest(headers, "Invalid JSON body.");
+        return badRequest(
+            headers,
+            "Invalid JSON body."
+        );
     }
 
     const action = normalizeAction(body.action);
@@ -706,91 +765,124 @@ exports.handler = async (event) => {
         "get_forecast_report",
     ];
 
-    if (!action || !validActions.includes(action)) {
-        return badRequest(headers, "Invalid or missing action.");
+    if (!validActions.includes(action)) {
+        return badRequest(
+            headers,
+            "Invalid or missing action."
+        );
     }
 
-    const authHeader = getTokenFromHeader(event);
+    const authorization = getTokenFromHeader(event);
 
-    if (!authHeader) {
-        return unauthorized(headers, "No token provided.");
+    if (!authorization) {
+        return unauthorized(
+            headers,
+            "No token provided."
+        );
     }
 
     let decoded;
 
     try {
-        const token = authHeader.replace(/^Bearer\s+/i, "");
-        decoded = jwt.verify(token, JWT_SECRET);
+        decoded = jwt.verify(
+            authorization.replace(/^Bearer\s+/i, ""),
+            JWT_SECRET
+        );
     } catch {
-        return unauthorized(headers, "Invalid token.");
+        return unauthorized(
+            headers,
+            "Invalid token."
+        );
     }
 
-    const scope = getScopeFromToken(decoded, body, headers);
+    const scope = getScopeFromToken(
+        decoded,
+        body,
+        headers
+    );
 
     if (scope.error) {
         return scope.error;
     }
 
-    const { storeId, role, selectedBranchId } = scope;
-
     let connection;
 
     try {
-        connection = await mysql.createConnection(dbConfig);
+        connection = await mysql.createConnection(
+            dbConfig
+        );
 
-        if (selectedBranchId) {
-            const branchExists = await ensureBranchBelongsToStore(
-                connection,
-                selectedBranchId,
-                storeId
-            );
+        if (scope.selectedBranchId) {
+            const allowed =
+                await ensureBranchBelongsToStore(
+                    connection,
+                    scope.selectedBranchId,
+                    scope.storeId
+                );
 
-            if (!branchExists) {
-                return badRequest(headers, "Invalid branch for this store.");
+            if (!allowed) {
+                return badRequest(
+                    headers,
+                    "Invalid branch for this store."
+                );
             }
         }
 
         if (action === "get_seasonal_forecast") {
-            const seasonalRange = resolveSeasonalDateRange(body);
+            const range = resolveSeasonalDateRange(
+                body
+            );
 
-            if (seasonalRange.error) {
-                return badRequest(headers, seasonalRange.error);
+            if (range.error) {
+                return badRequest(
+                    headers,
+                    range.error
+                );
             }
 
-            const seasonalResponse = await buildSeasonalForecastResponse({
-                connection,
-                storeId,
-                role,
-                selectedBranchId,
-                seasonalRange,
-            });
+            const response =
+                await buildSeasonalForecastResponse({
+                    connection,
+                    ...scope,
+                    seasonalRange: range,
+                });
 
-            return jsonResponse(200, headers, seasonalResponse);
+            return jsonResponse(
+                200,
+                headers,
+                response
+            );
         }
 
         if (action === "get_booking_forecast") {
-            const bookingResponse = await buildBookingForecastResponse({
+            const response =
+                await buildBookingForecastResponse({
+                    connection,
+                    ...scope,
+                });
+
+            return jsonResponse(
+                200,
+                headers,
+                response
+            );
+        }
+
+        const response =
+            await buildInventoryForecastResponse({
                 connection,
-                storeId,
-                role,
-                selectedBranchId,
+                ...scope,
             });
 
-            return jsonResponse(200, headers, bookingResponse);
-        }
-
-        const inventoryResponse = await buildInventoryForecastResponse({
-            connection,
-            storeId,
-            role,
-            selectedBranchId,
-        });
-
         if (action === "get_forecast_report") {
-            inventoryResponse.action = "get_forecast_report";
+            response.action = "get_forecast_report";
         }
 
-        return jsonResponse(200, headers, inventoryResponse);
+        return jsonResponse(
+            200,
+            headers,
+            response
+        );
     } catch (error) {
         return serverError(headers, error);
     } finally {
